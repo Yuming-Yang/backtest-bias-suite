@@ -124,6 +124,8 @@ class Scenario:
             raise ScenarioError("calendar must be a non-empty DatetimeIndex")
         if not cal.is_monotonic_increasing or not cal.is_unique:
             raise ScenarioError("calendar must be sorted and unique")
+        if cal.tz is not None:
+            raise ScenarioError("calendar must be timezone-naive")
         if not (cal == cal.normalize()).all():
             raise ScenarioError("calendar dates must be at midnight (daily bars)")
 
@@ -156,10 +158,15 @@ class Scenario:
         dlret = lst["delisting_return"].astype(float)
         if not np.isfinite(dlret).all() or (dlret < -1).any():
             raise ScenarioError("delisting_return must be finite and >= -1")
+        if (delist_date.isna() & (dlret != 0)).any():
+            raise ScenarioError("delisting_return must be 0 for an asset that never delists")
         # Prices may only exist while the asset is listed. The delist date is
         # the last trading day; the delisting return applies after its close.
         for asset in self.assets:
             traded = self.close.index[self.close[asset].notna()]
+            last_day = delist_date[asset]
+            if pd.notna(last_day) and last_day not in traded:
+                raise ScenarioError(f"{asset} must trade on its delist_date, the last trading day")
             if len(traded) == 0:
                 continue
             if traded[0] < list_date[asset]:
@@ -179,6 +186,13 @@ class Scenario:
         if not pd.to_datetime(ca["ex_date"]).isin(self.calendar).all():
             raise ScenarioError("every corporate action ex_date must be a trading day")
         value = ca["value"].astype(float)
+        if not np.isfinite(value).all():
+            raise ScenarioError("corporate action values must be finite")
+        if ca.duplicated(subset=["asset", "ex_date", "kind"]).any():
+            raise ScenarioError("two corporate actions share asset, ex_date and kind")
+        for asset, day in zip(ca["asset"], pd.to_datetime(ca["ex_date"]), strict=True):
+            if pd.isna(self.close.loc[day, asset]):
+                raise ScenarioError(f"{asset} has a corporate action on a day it does not trade")
         if (value[ca["kind"] == "split"] <= 0).any():
             raise ScenarioError("split ratios must be > 0")
         if (value[ca["kind"] == "dividend"] < 0).any():
@@ -190,7 +204,13 @@ class Scenario:
         if fu.empty:
             return
         _require_known_assets("fundamentals", fu["asset"], self.assets)
-        if (pd.to_datetime(fu["publish_date"]) < pd.to_datetime(fu["period_end"])).any():
+        period_end = pd.to_datetime(fu["period_end"])
+        publish_date = pd.to_datetime(fu["publish_date"])
+        if period_end.isna().any() or publish_date.isna().any():
+            raise ScenarioError("every fundamental needs a period_end and a publish_date")
+        if not np.isfinite(fu["value"].astype(float)).all():
+            raise ScenarioError("fundamental values must be finite")
+        if (publish_date < period_end).any():
             raise ScenarioError("a fundamental is published before its period ends")
         key = ["asset", "field", "period_end", "publish_date"]
         if fu.duplicated(subset=key).any():
@@ -217,6 +237,15 @@ class Scenario:
             # An open-ended interval (NaT end) overlaps anything after it.
             if (prev_end.isna() | (later_start < prev_end)).any():
                 raise ScenarioError(f"{asset} has overlapping membership intervals")
+            listed_from = pd.Timestamp(self.listings.loc[asset, "list_date"])
+            listed_to = pd.to_datetime(self.listings.loc[asset, "delist_date"])
+            for first, end_ in zip(g["start"], g["end"], strict=True):
+                member = self.calendar >= first
+                if pd.notna(end_):
+                    member &= self.calendar < end_
+                days = self.calendar[member]
+                if (days < listed_from).any() or (pd.notna(listed_to) and (days > listed_to).any()):
+                    raise ScenarioError(f"{asset} is an index member on a day it is not listed")
 
 
 def _require_columns(label: str, frame: pd.DataFrame, columns: tuple[str, ...]) -> None:

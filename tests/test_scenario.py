@@ -62,6 +62,22 @@ def _close_with(**cols: list[float]) -> pd.DataFrame:
     return base
 
 
+def _action(**overrides: list[object]) -> pd.DataFrame:
+    row = {"asset": ["AAA"], "ex_date": [D[1]], "kind": ["split"], "value": [2.0]}
+    return pd.DataFrame(row | overrides)
+
+
+def _fundamental(**overrides: list[object]) -> pd.DataFrame:
+    row = {
+        "asset": ["AAA"],
+        "field": ["eps"],
+        "period_end": [D[0]],
+        "publish_date": [D[1]],
+        "value": [1.0],
+    }
+    return pd.DataFrame(row | overrides)
+
+
 BAD_CASES = {
     "unsorted calendar": (
         lambda: {"calendar": CALENDAR[::-1]},
@@ -160,6 +176,54 @@ BAD_CASES = {
         "after start",
     ),
     "non-positive initial cash": (lambda: {"initial_cash": 0.0}, "initial_cash"),
+    "timezone-aware calendar": (
+        lambda: {
+            "calendar": CALENDAR.tz_localize("UTC"),
+            "open": make_scenario().open.tz_localize("UTC"),
+            "close": make_scenario().close.tz_localize("UTC"),
+        },
+        "timezone-naive",
+    ),
+    "delisting return without a delisting": (
+        lambda: {"listings": make_scenario().listings.assign(delisting_return=[-0.5, -0.3])},
+        "never delists",
+    ),
+    "delist date off calendar": (
+        lambda: {
+            "listings": make_scenario().listings.assign(
+                delist_date=[pd.NaT, pd.Timestamp("2024-01-06")]
+            )
+        },
+        "must trade on its delist_date",
+    ),
+    "no trade on the delist date": (
+        lambda: {"listings": make_scenario().listings.assign(delist_date=[pd.NaT, D[4]])},
+        "must trade on its delist_date",
+    ),
+    "corporate action value not finite": (
+        lambda: {"corporate_actions": _action(value=[np.nan])},
+        "finite",
+    ),
+    "duplicate corporate action": (
+        lambda: {"corporate_actions": pd.concat([_action(), _action()])},
+        "share asset, ex_date and kind",
+    ),
+    "corporate action after delisting": (
+        lambda: {"corporate_actions": _action(asset=["BBB"], ex_date=[D[4]])},
+        "does not trade",
+    ),
+    "fundamental without publish date": (
+        lambda: {"fundamentals": _fundamental(publish_date=[pd.NaT])},
+        "needs a period_end and a publish_date",
+    ),
+    "fundamental value not finite": (
+        lambda: {"fundamentals": _fundamental(value=[np.nan])},
+        "finite",
+    ),
+    "member after delisting": (
+        lambda: {"membership": pd.DataFrame({"asset": ["BBB"], "start": [D[0]], "end": [pd.NaT]})},
+        "not listed",
+    ),
 }
 
 
