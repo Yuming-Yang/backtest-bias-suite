@@ -1,6 +1,6 @@
 # SPEC: Backtest Bias Test Suite
 
-Status: draft, awaiting author review.
+Status: approved by the author on 2026-11-14.
 
 ## Problem
 
@@ -34,16 +34,15 @@ This project is a test suite that wraps around any daily-bar backtest engine and
 | T4 | Survivorship bias | Assets that delist are missing from the whole history, or their delisting return is dropped | Outcome: equal-weight "hold all listed assets" NAV matches the ground truth including delisted names and delisting returns |
 | T5 | Zero transaction costs | Declared cost model is ignored | Outcome: on flat prices, a pure-turnover strategy loses exactly turnover × cost rate |
 | T6 | Corporate actions unadjusted | A 2:1 split shows up as a −50% return; dividends are not credited | Outcome: holding through a split leaves NAV unchanged; holding through a dividend increases NAV by the dividend amount |
+| T7 | Universe membership lookahead | Today's index constituents are used for the whole history | Probe: every asset offered at t was a member at t. Outcome: equal-weight "hold the index members" NAV matches the ground truth built from point-in-time membership |
 
-### Candidate traps for v2 (author to decide)
+### Candidate traps for v2
 
-These come from common practice and I am not sure which are worth the space. Please add, cut, or reorder based on what you have actually seen in research.
+Ranked by how common they are and how cleanly they can be tested deterministically. Universe membership lookahead, ranked first in the draft, was moved into v1 as T7.
 
-- **Universe membership lookahead.** Using today's index constituents for the whole history.
-- **Back-adjusted price levels leaking future splits.** A filter like "price > $5" on back-adjusted prices uses information from future splits.
-- **Untradable fills.** Fills while an asset is halted, or on a day with no volume.
-- **Stale price forward-fill.** Missing prices forward-filled and treated as tradable.
-- **Calendar misalignment.** Joining two data sources with different trading calendars or timezones, so one is shifted by a day.
+1. **Stale prices and untradable fills.** Missing prices are forward-filled and treated as tradable, or fills happen while an asset is halted or has zero volume. Merged into one trap because the test scenario is the same.
+2. **Back-adjusted price levels leaking future splits.** A filter like "price > $5" on back-adjusted prices uses information from future splits.
+3. **Calendar misalignment.** Joining two data sources with different trading calendars or timezones, so one is shifted by a day. Real, but closer to data engineering, and harder to stage naturally.
 
 ## Package shape
 
@@ -59,13 +58,13 @@ These come from common practice and I am not sure which are worth the space. Ple
 - Not a backtest engine; the reference engine exists only to validate the tests.
 - No real market data. Everything is synthetic and seeded.
 - Daily bars only; no intraday or order-book simulation.
-- No claims about specific third-party engines unless the author approves (see Open questions).
+- No claims about specific third-party engines unless the author approves (see Decisions, item 5).
 - Does not detect research-level overfitting (multiple testing, p-hacking). That is a different problem and a possible link to project 11.
 
 ## Acceptance criteria
 
 - [ ] The reference engine passes all v1 trap tests.
-- [ ] For each of T1–T6, the matching mutant fails that trap's test and passes all the others; the full mutation matrix is printed in the README.
+- [ ] For each of T1–T7, the matching mutant fails that trap's test and passes all the others; the full mutation matrix is printed in the README.
 - [ ] Ground truth for every outcome check is computed by code independent of the reference engine (not by calling the engine itself).
 - [ ] An example adapter for a second engine style, written as a vectorized pandas engine, is 30 lines or fewer and runs in CI.
 - [ ] `uv run pytest` passes in CI (GitHub Actions) with ruff clean.
@@ -77,7 +76,7 @@ These come from common practice and I am not sure which are worth the space. Ple
 1. **Scaffold and data model.** uv project, CI, `Scenario` / `View` / `BacktestResult` types, adapter protocol.
 2. **Synthetic generator and reference engine.** Seeded generator; minimal event-loop reference engine; basic sanity tests.
 3. **Timing traps.** T1 and T2, with probes, outcome checks and mutants.
-4. **Point-in-time data traps.** T3 and T4.
+4. **Point-in-time data traps.** T3, T4 and T7.
 5. **Accounting traps.** T5 and T6.
 6. **Mutation matrix, CLI, example adapter, README.**
 
@@ -89,12 +88,25 @@ No paid APIs, no cloud compute, no external data. Synthetic data only, so there 
 
 ## Related work
 
-Not verified. The web search was unavailable when this spec was drafted. Before publishing, check whether there are existing open-source tools that test backtest engines for these biases, and position this project relative to them in the README.
+First pass, from web search on 2026-11-14. I have only seen search snippets, not the repos themselves. Re-check each one (activity, scope, license) before citing it in the README.
 
-## Open questions for the author
+Existing tools fall into two groups, and both test the **strategy**, not the **engine**:
 
-1. **Repo and package name.** Proposed: repo `backtest-bias-suite`, import name `btbias`.
-2. **Trap list.** Is the v1 list right? Which v2 candidates matter, and what is missing from your own experience?
-3. **Execution convention.** Default is decide at close t, fill at open t+1. Is that the convention you want as the default, or should it be next close?
-4. **Delisting return.** Use an explicit delisting return in the scenario (CRSP-style), or assume the position is liquidated at the last traded price?
-5. **Real engine adapter (stretch).** Should we write an adapter for a well-known open-source engine and publish the results? This would be stronger evidence, but it means making a public statement about a third-party product.
+- **Static linters for strategy code.** They scan Python source for leak patterns such as `shift(-1)` and do not run anything. Examples: `backtest-audit` (PyPI), `backtest-auditor` (PyPI), the auditor in `replaybt`, and a few single-file gists.
+- **Re-run checks inside one framework.** Freqtrade's lookahead analysis re-runs a strategy with future data hidden and flags signals that change. `peek` audits time-series ML pipelines for leakage. Freqtrade's check only works for strategies written for Freqtrade.
+
+This project looks different from both in three ways (to be confirmed once the repos above are read):
+
+1. It tests the **engine**: whether the engine leaks data, misaligns fills, drops delisted names, skips costs or mishandles corporate actions, whatever strategy it runs.
+2. It checks against a **ground truth** on synthetic data with known answers, not against patterns or heuristics.
+3. It shows the tests are sharp and specific with a **mutation matrix** (one bug per mutant).
+
+The search turned up no open-source tool that tests engines for survivorship bias or point-in-time fundamentals (T3, T4).
+
+## Decisions (author, 2026-11-14)
+
+1. **Names.** Repo `backtest-bias-suite`, import name `btbias`. Neither was taken on PyPI or under the author's GitHub account when checked.
+2. **Trap list.** v1 is T1–T7: the original six plus universe membership lookahead, which shares T4's test machinery. v2 candidates are ranked above. The author has not yet added traps from their own research; that stays open.
+3. **Default execution convention.** Decide at close t, fill at open t+1. Each scenario can still declare another convention. Splits and dividends take effect at the open on the ex-date, so ground truth must apply the corporate action before the t+1 open fill.
+4. **Delisting.** Scenarios carry an explicit delisting return (CRSP-style), defaulting to 0. Liquidating at the last traded price is the special case where the return is 0. T4 scenarios include both a positive case (cash merger) and a large negative case (performance-related delisting).
+5. **Third-party engine adapter.** Not in v1. After v1, run it privately first. Publish only with the author's approval, reported as "results under default configuration" with the configuration stated, and with data-layer failures kept apart from engine failures.
