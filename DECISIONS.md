@@ -4,7 +4,7 @@ Key design decisions, with the alternatives that were considered and dropped. Ne
 
 ## 2026-11-14 — Spec decisions
 
-See the Decisions section of [SPEC.md](SPEC.md): names, the default fill convention (close t → open t+1), explicit delisting returns, the v1 trap list T1–T7, and no third-party engine adapter in v1.
+See the Decisions section of [SPEC.md](SPEC.md): names, the default fill convention (close t → open t+1), explicit delisting returns, the v1 trap list (now T1–T8), and no third-party engine adapter in v1.
 
 ## 2026-11-14 — Raw prices; corporate actions in a separate table
 
@@ -92,3 +92,42 @@ See the Decisions section of [SPEC.md](SPEC.md): names, the default fill convent
 
 **Dropped.** Time-varying borrow availability, recalls and margin. They are real, but each needs its own ground truth, and a static flag is enough to catch an engine that ignores borrowing altogether.
 
+## 2026-11-14 — Mutants override one method of the reference engine
+
+**Decision.** Each rule of the reference semantics is its own method on `ReferenceEngine`. A mutant is a subclass that overrides exactly one of them. The T5 mutant overrides `transaction_cost` to return 0.
+
+**Why.** The diff between the reference and a mutant is then a few lines anyone can read, and "exactly one bug" is visible in the code rather than promised in a comment.
+
+**Dropped.** A `bugs=` flag set on the engine, with `if` branches inside it. It keeps everything in one file, but it makes the reference engine harder to read and lets two flags interact in ways the mutation matrix never tests.
+
+## 2026-11-14 — The reference engine refuses what it does not model yet
+
+**Decision.** Until their traps land, the reference engine raises `NotImplementedError` for corporate actions, delistings and short positions.
+
+**Why.** An engine that silently ignores a split returns a plausible NAV. If a scenario with one slipped into a test before T6 exists, the test would pass for the wrong reason.
+
+## 2026-11-14 — Engine errors are results, not exceptions
+
+**Decision.** `run_trap` catches any exception from the adapter and reports it as `ERROR`. In the mutation matrix, a mutant that makes its own trap crash counts as not caught.
+
+**Why.** A suite run should report every trap, not stop at the first engine that crashes. And a trap that only "catches" a bug by crashing would give a user no message about what went wrong.
+
+## 2026-11-14 — Ground truth works in money, and its independence is tested
+
+**Decision.** T5's expected NAV comes from `truth.flat_market_nav`, a ten-line loop over money per asset. A test parses the imports of `truth.py` and every trap module and fails if any imports the reference engine or the mutants.
+
+**Why.** On a market where no price moves, shares and prices drop out of the problem, so the ground truth can be written without any of the engine's machinery. The import test turns the acceptance criterion "ground truth is independent of the reference engine" into something CI checks.
+
+## 2026-11-14 — Keep the 1e-9 tolerance; the example engine tracks drift
+
+**Decision.** Outcome checks keep a relative tolerance of 1e-9. The example vectorized engine keeps one loop over days so that each fill trades the gap between the target and the holdings as they drifted since the last fill.
+
+**Why.** Drafting the example adapter showed that the textbook vectorized cost, `rate * |w_t - w_{t-1}| * NAV`, ignores that drift. On the T5 scenario it ends about 6e-6 (relative) away from the exact NAV, against a cost effect of about 2%. It fails T5 at 1e-9 even though it charges costs. With 1e-9 the suite can tell "follows the reference semantics" from "almost does", and the example shows an exact vectorized engine is possible in about 60 lines.
+
+**Trade-off.** Engines that use the textbook formula will fail T5 without a cost bug. The alternative is a per-trap tolerance set well below the size of the effect each trap tests (on T5, 1e-4 would still sit two orders of magnitude below the 2% effect). That would accept approximate engines at the price of missing bugs smaller than the tolerance.
+
+## 2026-11-14 — `View.weights` is optional
+
+**Decision.** Suite strategies never read `View.weights`.
+
+**Why.** A vectorized engine takes all decisions up front and only knows its holdings after the run, so its adapter cannot fill this field. Requiring it would rule out the most common engine style in research code.
