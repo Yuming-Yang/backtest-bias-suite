@@ -19,3 +19,6 @@ htmlcov/
 .DS_Store
 .idea/
 .vscode/
+
+# macOS / iCloud sync conflict copies, e.g. "trap 2.py"
+* [0-9].*
