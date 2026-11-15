@@ -41,6 +41,20 @@ class SameCloseEngine(ReferenceEngine):
         return scenario.close.iloc[decision_day].where(scenario.open.loc[t].notna())
 
 
+class SurvivorsOnlyEngine(ReferenceEngine):
+    """T4: offers only assets still listed at the end of the data.
+
+    This is what a backtest sees when its data comes from a snapshot of
+    today's tickers: every company that later delisted is simply absent.
+    """
+
+    name = "mutant-T4-survivors-only"
+
+    def universe(self, scenario: Scenario, t: pd.Timestamp) -> tuple[str, ...]:
+        dead = set(scenario.listings.index[scenario.listings["delist_date"].notna()])
+        return tuple(a for a in super().universe(scenario, t) if a not in dead)
+
+
 class ZeroCostEngine(ReferenceEngine):
     """T5: ignores the scenario's cost model and trades for free."""
 
@@ -53,6 +67,7 @@ class ZeroCostEngine(ReferenceEngine):
 MUTANTS: dict[str, type[ReferenceEngine]] = {
     "T1": PeekingEngine,
     "T2": SameCloseEngine,
+    "T4": SurvivorsOnlyEngine,
     "T5": ZeroCostEngine,
 }
 """Trap id -> the mutant that trap must catch."""

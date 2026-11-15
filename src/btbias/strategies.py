@@ -58,3 +58,27 @@ class Momentum:
     def target_weights(self, view: View) -> pd.Series:
         self.seen.append(view)
         return top_mover(view.close)
+
+
+def equal_weight(universe: tuple[str, ...]) -> pd.Series:
+    """Split ``MAX_GROSS`` equally across ``universe``."""
+    if not universe:
+        return pd.Series(dtype=float)
+    return pd.Series(MAX_GROSS / len(universe), index=list(universe))
+
+
+@dataclass
+class EqualWeightUniverse:
+    """Holds every asset the engine offers, equally weighted.
+
+    "Hold the index" in its simplest form. It reads only ``View.universe``,
+    so its NAV shows what the engine let it hold, and the recorded views
+    show what the engine offered on each day.
+    """
+
+    name: str = "equal-weight-universe"
+    seen: list[View] = field(default_factory=list)
+
+    def target_weights(self, view: View) -> pd.Series:
+        self.seen.append(view)
+        return equal_weight(view.universe)

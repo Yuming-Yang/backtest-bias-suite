@@ -5,11 +5,12 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
 import btbias
 from btbias.generator import trading_days
 from btbias.scenario import ExecutionConvention
-from btbias.truth import flat_market_nav, no_cost_nav
+from btbias.truth import flat_market_nav, listed_market_nav, no_cost_nav
 
 
 def test_flat_market_nav_matches_a_hand_calculation() -> None:
@@ -74,3 +75,36 @@ def test_ground_truth_and_traps_do_not_import_the_reference_engine() -> None:
     for path in graded:
         forbidden = _btbias_imports(path) & {"btbias.reference", "btbias.mutants", "btbias"}
         assert not forbidden, f"{path.name} imports {sorted(forbidden)}"
+
+
+def test_listed_market_nav_pays_the_delisting_return_and_holds_cash_after() -> None:
+    cal = trading_days(3)
+    close = pd.DataFrame({"A": [10.0, 11.0, 12.1], "B": [20.0, 16.0, np.nan]}, index=cal)
+    open_ = close.shift(1).where(close.notna())
+    open_.iloc[0] = close.iloc[0]
+    listings = pd.DataFrame(
+        {"list_date": [cal[0]] * 2, "delist_date": [pd.NaT, cal[1]], "delisting_return": [0, -0.5]},
+        index=["A", "B"],
+    )
+    schedule = pd.DataFrame({"A": [0.5, 0.5, 0.5], "B": [0.5, 0.5, 0.5]}, index=cal)
+    nav = listed_market_nav(schedule, open_, close, listings, 100.0)
+    # Day 1: A +10%, B -20% and then -50% on delisting.
+    nav1 = 100 * (1 + 0.5 * 0.1 + 0.5 * (0.8 * 0.5 - 1))
+    # Day 2: the B order cannot fill, so only half is invested; A +10%.
+    nav2 = nav1 * (1 + 0.5 * 0.1)
+    np.testing.assert_allclose(nav, [100.0, nav1, nav2], rtol=1e-14)
+
+
+def test_listed_market_nav_refuses_markets_it_cannot_price() -> None:
+    cal = trading_days(3)
+    close = pd.DataFrame({"A": [10.0, 11.0, 12.0]}, index=cal)
+    listings = pd.DataFrame(
+        {"list_date": [cal[0]], "delist_date": [pd.NaT], "delisting_return": [0.0]}, index=["A"]
+    )
+    schedule = pd.DataFrame({"A": [0.5, 0.5, 0.5]}, index=cal)
+    with pytest.raises(ValueError, match="previous close"):
+        listed_market_nav(schedule, close * 1.01, close, listings, 100.0)
+    halted = close.copy()
+    halted.iloc[1] = np.nan
+    with pytest.raises(ValueError, match="restarts"):
+        listed_market_nav(schedule, halted.shift(1), halted, listings, 100.0)
