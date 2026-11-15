@@ -5,7 +5,13 @@ import pandas as pd
 import pytest
 
 from btbias import CostModel, ExecutionConvention, Scenario
-from btbias.generator import listed_throughout, random_walk, simple_market, trading_days
+from btbias.generator import (
+    flat_total_return_prices,
+    listed_throughout,
+    random_walk,
+    simple_market,
+    trading_days,
+)
 from btbias.reference import ReferenceEngine
 
 from builders import Fixed, make_scenario
@@ -132,9 +138,6 @@ def test_order_for_an_asset_without_a_price_on_the_fill_day_is_cancelled() -> No
 
 def test_engine_refuses_features_it_does_not_model_yet() -> None:
     engine = ReferenceEngine()
-    split = pd.DataFrame({"asset": ["AAA"], "ex_date": [CAL[1]], "kind": ["split"], "value": [2.0]})
-    with pytest.raises(NotImplementedError, match="corporate actions"):
-        engine.run(make_scenario(corporate_actions=split), Fixed({}))
     with pytest.raises(NotImplementedError, match="short"):
         engine.run(_market(), Fixed({0: {"A": -0.5}}))
     with pytest.raises(ValueError, match="unknown assets"):
@@ -164,3 +167,44 @@ def test_delisting_turns_the_position_into_cash_at_the_last_close() -> None:
     # From that close on BBB is cash: zero weight and no further fills.
     assert (result.weights["BBB"].iloc[2:] == 0.0).all()
     assert (pd.to_datetime(bbb["date"]) <= day2).all()
+
+
+def test_splits_and_dividends_leave_an_unchanged_company_unchanged() -> None:
+    cal = trading_days(5)
+    actions = pd.DataFrame(
+        {
+            "asset": ["A", "B"],
+            "ex_date": [cal[2], cal[3]],
+            "kind": ["split", "dividend"],
+            "value": [2.0, 1.0],
+        }
+    )
+    open_, close = flat_total_return_prices(cal, {"A": 100.0, "B": 50.0}, actions)
+    assert close["A"].tolist() == [100.0, 100.0, 50.0, 50.0, 50.0]
+    assert close["B"].tolist() == [50.0, 50.0, 50.0, 49.0, 49.0]
+    scenario = simple_market("actions", open_, close, corporate_actions=actions)
+    result = ReferenceEngine().run(scenario, Fixed({k: {"A": 0.4, "B": 0.4} for k in range(5)}))
+
+    np.testing.assert_allclose(result.nav, 1_000_000.0, rtol=1e-12)
+    # The split needs no trade. The dividend moves cash out of B (weight
+    # 0.4 -> 0.392), so on its ex-date the engine buys B back up, and nothing else.
+    trades = result.trades
+    assert set(trades["date"]) == {cal[1], cal[3]}
+    assert trades.loc[trades["date"] == cal[3], "asset"].tolist() == ["B"]
+    np.testing.assert_allclose(result.weights.iloc[1:].to_numpy(), 0.4, rtol=1e-12)
+
+
+def test_ignoring_a_split_looks_like_a_crash() -> None:
+    class IgnoresActions(ReferenceEngine):
+        def corporate_actions(
+            self, scenario: Scenario, t: pd.Timestamp, shares: pd.Series
+        ) -> float:
+            return 0.0
+
+    cal = trading_days(4)
+    actions = pd.DataFrame({"asset": ["A"], "ex_date": [cal[2]], "kind": ["split"], "value": [2.0]})
+    open_, close = flat_total_return_prices(cal, {"A": 100.0}, actions)
+    scenario = simple_market("split", open_, close, corporate_actions=actions)
+    nav = IgnoresActions().run(scenario, Fixed({0: {"A": 0.5}, 1: {"A": 0.5}})).nav
+    # Half the money sat in A, which "fell" 50% on the ex-date.
+    assert nav.iloc[2] == pytest.approx(750_000.0)

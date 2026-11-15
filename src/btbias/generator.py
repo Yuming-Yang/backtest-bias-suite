@@ -46,6 +46,38 @@ def flat_prices(
     return close.copy(), close
 
 
+def ex_date_price(previous: float, dividend: float = 0.0, split: float = 1.0) -> float:
+    """The price an unchanged company trades at after an ex-date.
+
+    The dividend comes off first (it is paid per share held before the
+    split), then the price is divided by the split ratio.
+    """
+    return (previous - dividend) / split
+
+
+def flat_total_return_prices(
+    calendar: pd.DatetimeIndex, levels: Mapping[str, float], corporate_actions: pd.DataFrame
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Raw prices of companies whose value never changes, through splits and dividends.
+
+    Each asset starts at its level. On an ex-date the raw price drops to
+    ``ex_date_price``, and stays there. A holder who receives the split
+    shares and the dividend cash is exactly as rich as before, so any
+    correct engine keeps NAV flat on these prices.
+    """
+    close = pd.DataFrame(index=calendar, columns=list(levels), dtype=float)
+    ex_date = pd.to_datetime(corporate_actions["ex_date"])
+    for asset, level in levels.items():
+        price = float(level)
+        for i, t in enumerate(calendar):
+            mine = corporate_actions[(corporate_actions["asset"] == asset) & (ex_date == t)]
+            if not mine.empty:
+                values = dict(zip(mine["kind"], mine["value"].astype(float), strict=True))
+                price = ex_date_price(price, values.get("dividend", 0.0), values.get("split", 1.0))
+            close.iloc[i, close.columns.get_loc(asset)] = price
+    return close.copy(), close
+
+
 def random_walk(
     calendar: pd.DatetimeIndex,
     assets: Sequence[str],

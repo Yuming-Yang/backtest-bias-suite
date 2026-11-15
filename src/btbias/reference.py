@@ -13,13 +13,16 @@ follows is listed under "Reference semantics" in SPEC.md:
    a membership table, otherwise the assets with a price at ``as_of``.
 6. A position in an asset that delists is turned into cash at the close of
    its last trading day: ``shares * close * (1 + delisting_return)``.
+7. Splits and dividends take effect at the open of the ex-date, before that
+   day's fills: a split multiplies shares by its ratio, a dividend pays
+   ``shares * amount`` in cash. On a day with both, the dividend is paid on
+   the shares held before the split.
 
 Each rule lives in its own small method so a mutant (see ``btbias.mutants``)
 can break exactly one of them by overriding one method.
 
-Corporate actions and shorting are added together with their traps (T6,
-T8). Until then the engine refuses scenarios and strategies
-that need them, rather than silently getting them wrong.
+Shorting is added together with its trap (T8). Until then the engine
+refuses strategies that need it, rather than silently getting it wrong.
 """
 
 from __future__ import annotations
@@ -40,7 +43,6 @@ class ReferenceEngine:
     name = "reference"
 
     def run(self, scenario: Scenario, strategy: Strategy) -> BacktestResult:
-        _require_supported(scenario)
         assets = list(scenario.assets)
         shares = pd.Series(0.0, index=assets)
         cash = float(scenario.initial_cash)
@@ -52,6 +54,7 @@ class ReferenceEngine:
         delist_date = pd.to_datetime(scenario.listings["delist_date"])
 
         for t in scenario.calendar:
+            cash += self.corporate_actions(scenario, t, shares)
             if pending is not None:
                 price = self.fill_prices(scenario, t)
                 cash = self.fill(scenario, t, pending, price, last_close, shares, cash, fills)
@@ -107,6 +110,19 @@ class ReferenceEngine:
             return scenario.open.loc[t]
         return scenario.close.loc[t]
 
+    def corporate_actions(self, scenario: Scenario, t: pd.Timestamp, shares: pd.Series) -> float:
+        """Apply splits (to ``shares``, in place) at the open of ``t``; return dividend cash."""
+        ca = scenario.corporate_actions
+        if ca.empty:
+            return 0.0
+        today = ca[pd.to_datetime(ca["ex_date"]) == t]
+        cash = 0.0
+        for row in today[today["kind"] == "dividend"].itertuples():
+            cash += shares[row.asset] * float(row.value)
+        for row in today[today["kind"] == "split"].itertuples():
+            shares[row.asset] *= float(row.value)
+        return cash
+
     def delisting_proceeds(
         self, scenario: Scenario, asset: str, shares: float, last_close: float
     ) -> float:
@@ -148,11 +164,6 @@ class ReferenceEngine:
                 {"date": t, "asset": asset, "quantity": delta, "price": price[asset], "cost": cost}
             )
         return cash
-
-
-def _require_supported(scenario: Scenario) -> None:
-    if not scenario.corporate_actions.empty:
-        raise NotImplementedError("corporate actions are not supported yet (T6)")
 
 
 def _check_target(target: pd.Series, assets: list[str]) -> pd.Series:
