@@ -131,3 +131,25 @@ See the Decisions section of [SPEC.md](SPEC.md): names, the default fill convent
 **Decision.** Suite strategies never read `View.weights`.
 
 **Why.** A vectorized engine takes all decisions up front and only knows its holdings after the run, so its adapter cannot fill this field. Requiring it would rule out the most common engine style in research code.
+
+## 2026-11-15 — T1 uses one strategy as both probe and outcome check
+
+**Decision.** T1's momentum strategy records every view (the probe) and trades on the last row it is shown (the outcome). The check flags any view with rows dated after `as_of`, and separately compares NAV with the strategy run on point-in-time data.
+
+**Why.** Each check misses a case the other catches. The probe names the exact day of a leak but trusts the dates; an engine that writes tomorrow's prices under today's date passes it. The outcome check catches that, but on its own it would only say "NAV is off". The strategy reads `iloc[-1]` rather than `loc[as_of]` on purpose: it trusts the engine, as most strategy code does, so a leak changes its orders.
+
+**Guard.** A test checks that the expected momentum picks switch often (more than 20 times across all four assets). If the strategy held one asset throughout, a leak could leave its orders unchanged and the outcome check would see nothing.
+
+## 2026-11-15 — The T2 mutant fills on the next day at the decision close
+
+**Decision.** `SameCloseEngine` overrides only `fill_prices`: the fill is still dated the day after the decision, but at the decision day's close.
+
+**Why.** Dating the trade on the decision day as well would mean changing the engine loop, not one method. The price is what makes this bug inflate results, and both T2 checks (fill price, NAV) catch it. Where opens equal the previous close, as in every scenario except T2's, the mutant gives bit-for-bit the same answer as the reference engine, which is what keeps the mutation matrix diagonal.
+
+**Dropped.** A probe for T2 (for example, checking the date of each fill). Fill dates belong to the result, not the view, so the price check already covers them.
+
+## 2026-11-15 — Ground truth for moving markets comes from returns, not shares
+
+**Decision.** `truth.no_cost_nav` computes NAV from weights and returns between fill prices, as a cumulative product. It requires a price for every asset on every day and no costs.
+
+**Why.** Without costs, rebalancing to target weights at a fill makes growth until the next fill exactly `1 + w . r`. That shares no code path with the share-and-cash bookkeeping of the reference engine, so the two agreeing is evidence, not a tautology.
