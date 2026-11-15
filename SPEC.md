@@ -1,6 +1,6 @@
 # SPEC: Backtest Bias Test Suite
 
-Status: approved by the author on 2026-11-14.
+Status: v1 scope fixed on 2026-11-14. The questions under "Open design questions" are to be settled before milestone 2.
 
 ## Problem
 
@@ -47,7 +47,7 @@ Ranked by how common they are and how cleanly they can be tested deterministical
 ## Package shape
 
 - Python 3.12, managed by uv; numpy and pandas only at runtime.
-- Import name: `btbias` (to be confirmed).
+- Import name: `btbias`.
 - Library API: `btbias.run_suite(adapter) -> SuiteReport`.
 - pytest integration: a user writes a 3-line test file that parametrizes the suite over their adapter, and gets one test per trap.
 - CLI: `btbias run path.to:MyAdapter` prints a pass/fail table.
@@ -58,8 +58,8 @@ Ranked by how common they are and how cleanly they can be tested deterministical
 - Not a backtest engine; the reference engine exists only to validate the tests.
 - No real market data. Everything is synthetic and seeded.
 - Daily bars only; no intraday or order-book simulation.
-- No claims about specific third-party engines unless the author approves (see Decisions, item 5).
-- Does not detect research-level overfitting (multiple testing, p-hacking). That is a different problem and a possible link to project 11.
+- No claims about specific third-party engines in v1 (see Decisions, item 5).
+- Does not detect research-level overfitting (multiple testing, p-hacking). That is a different problem.
 
 ## Acceptance criteria
 
@@ -80,7 +80,7 @@ Ranked by how common they are and how cleanly they can be tested deterministical
 5. **Accounting traps.** T5 and T6.
 6. **Mutation matrix, CLI, example adapter, README.**
 
-Each milestone is one branch and one PR, followed by a short Chinese walkthrough for the author.
+Each milestone is one branch and one PR.
 
 ## Cost and dependencies
 
@@ -88,25 +88,34 @@ No paid APIs, no cloud compute, no external data. Synthetic data only, so there 
 
 ## Related work
 
-First pass, from web search on 2026-11-14. I have only seen search snippets, not the repos themselves. Re-check each one (activity, scope, license) before citing it in the README.
+Checked on 2026-11-14 against each project's PyPI metadata, README or official docs. None of them was installed or run, so the descriptions below are what the projects say about themselves.
 
 Existing tools fall into two groups, and both test the **strategy**, not the **engine**:
 
-- **Static linters for strategy code.** They scan Python source for leak patterns such as `shift(-1)` and do not run anything. Examples: `backtest-audit` (PyPI), `backtest-auditor` (PyPI), the auditor in `replaybt`, and a few single-file gists.
-- **Re-run checks inside one framework.** Freqtrade's lookahead analysis re-runs a strategy with future data hidden and flags signals that change. `peek` audits time-series ML pipelines for leakage. Freqtrade's check only works for strategies written for Freqtrade.
+- **Static linters for strategy code.** They scan Python source for leak patterns and do not run a backtest. `backtest-audit` and `backtest-auditor` (both on PyPI) describe themselves this way. `replaybt` is a backtest engine that ships a static bias auditor among its validation tools.
+- **Re-run checks.** Freqtrade's `lookahead-analysis` chains backtests and compares indicator values and entries/exits against the full run; it does not read the strategy code, and it only works for Freqtrade strategies. `peek` and `temporal-leaks` audit time-series ML pipelines for leakage.
 
-This project looks different from both in three ways (to be confirmed once the repos above are read):
+This project differs in three ways:
 
 1. It tests the **engine**: whether the engine leaks data, misaligns fills, drops delisted names, skips costs or mishandles corporate actions, whatever strategy it runs.
 2. It checks against a **ground truth** on synthetic data with known answers, not against patterns or heuristics.
 3. It shows the tests are sharp and specific with a **mutation matrix** (one bug per mutant).
 
-The search turned up no open-source tool that tests engines for survivorship bias or point-in-time fundamentals (T3, T4).
+The search found no open-source tool that tests an engine for survivorship bias or point-in-time fundamentals (T3, T4). That is an absence of search results, not proof that none exists.
 
-## Decisions (author, 2026-11-14)
+## Open design questions
+
+To settle before milestone 2, because the reference engine and every ground truth depend on them.
+
+1. **Reference accounting.** How target weights become share counts under each convention: which NAV the weights apply to, where costs are taken from, whether fractional shares are allowed, and what happens to an order for an asset that does not trade on the fill day.
+2. **Isolation between traps.** A fill-timing bug changes NAV in any scenario that trades, and a missing-cost bug changes NAV in any scenario with a non-zero cost rate. For each mutant to fail only its own trap, every outcome scenario has to be insensitive to the other bugs. This needs an explicit table: scenario by trap, sensitive or not.
+3. **Meaning of `View.universe`.** Listed assets, or index members when the scenario has a membership table. T7's probe depends on the answer.
+4. **What probes can reach.** Probes inspect the `View` the adapter builds. For an engine with its own data feed this exercises the engine. For a vectorized engine the adapter author writes the slicing, so the probe tests the adapter. Outcome checks do not have this gap. This belongs in Limitations.
+
+## Decisions (2026-11-14)
 
 1. **Names.** Repo `backtest-bias-suite`, import name `btbias`. Neither was taken on PyPI or under the author's GitHub account when checked.
-2. **Trap list.** v1 is T1–T7: the original six plus universe membership lookahead, which shares T4's test machinery. v2 candidates are ranked above. The author has not yet added traps from their own research; that stays open.
+2. **Trap list.** v1 is T1–T7: the original six plus universe membership lookahead, which shares T4's test machinery. v2 candidates are ranked above. The list stays open for traps from first-hand research experience.
 3. **Default execution convention.** Decide at close t, fill at open t+1. Each scenario can still declare another convention. Splits and dividends take effect at the open on the ex-date, so ground truth must apply the corporate action before the t+1 open fill.
 4. **Delisting.** Scenarios carry an explicit delisting return (CRSP-style), defaulting to 0. Liquidating at the last traded price is the special case where the return is 0. T4 scenarios include both a positive case (cash merger) and a large negative case (performance-related delisting).
-5. **Third-party engine adapter.** Not in v1. After v1, run it privately first. Publish only with the author's approval, reported as "results under default configuration" with the configuration stated, and with data-layer failures kept apart from engine failures.
+5. **Third-party engine adapter.** Not in v1. Any later result is to be reported as "results under default configuration" with the configuration stated, and with data-layer failures kept apart from engine failures.

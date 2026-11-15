@@ -53,3 +53,18 @@ See the Decisions section of [SPEC.md](SPEC.md): names, the default fill convent
 **Decision.** `Strategy.target_weights` may return any finite weights, including shorts and gross exposure above 1. The suite does not enforce long-only or a leverage cap.
 
 **Why.** Constraints belong to a strategy, not to the engine contract. The suite's own probe and outcome strategies will stay long-only and fully funded, so their ground truth does not depend on borrow costs or margin, which are out of scope for v1.
+
+## 2026-11-14 — The delist date must be a day the asset trades
+
+**Decision.** A scenario is rejected if an asset has no price on its `delist_date`, or carries a non-zero `delisting_return` without a `delist_date`.
+
+**Why.** The delisting return is defined from the close on the last trading day. Without a close on that day there is nothing to compound it onto, and each engine would be free to guess. Found by probing the validator with edge cases after milestone 1; nine other inconsistent inputs were closed in the same change.
+
+## 2026-11-14 — Dependency floors are tested, not inherited
+
+**Decision.** `numpy>=1.26`, `pandas>=2.2.1`, and a CI job that installs the lowest allowed versions.
+
+**Why.** The first floors were simply the versions installed on day one (numpy 2.5, pandas 3.1). A suite that wraps other engines has to run in their environment, and many still pin pandas 2.x.
+
+**Dropped.** `pandas>=2.2.0`: importing 2.2.0 emits a pyarrow DeprecationWarning, and this project runs pytest with warnings as errors. Relaxing that filter for one patch release was not worth it.
+
