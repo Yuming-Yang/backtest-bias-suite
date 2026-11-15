@@ -78,7 +78,7 @@ Ranked by how common they are and how cleanly they can be tested deterministical
 1. **Scaffold and data model.** uv project, CI, `Scenario` / `View` / `BacktestResult` types, adapter protocol. Done.
 2. **Generator, reference engine and one trap end to end.** Seeded generator; minimal event-loop reference engine; T5 with its mutant; a first draft of the vectorized example adapter. T5 is the simplest trap, and the example adapter is the riskiest acceptance criterion, so both come early to test the contract before the other traps are built on it. Done.
 3. **Timing traps.** T1 and T2, with probes, outcome checks and mutants. Done.
-4. **Point-in-time data traps.** T3, T4 and T7.
+4. **Point-in-time data traps.** T3, T4 and T7. Done.
 5. **Accounting traps.** T6 and T8.
 6. **Mutation matrix, CLI, final example adapter, README.**
 
@@ -115,6 +115,7 @@ What "correct" means for outcome checks. The reference engine and every ground t
 4. **Orders that cannot fill are cancelled.** If an asset has no price on the fill day, its order is dropped, not carried forward. Orders decided on the last calendar day never fill.
 5. **`View.universe`.** If the scenario has a membership table, the index members at `as_of`. Otherwise the assets with a price at `as_of`.
 6. **Shorting.** A scenario declares a daily borrow rate and which assets can be borrowed. Each day a short pays `borrow_rate * |short market value at the close|` from cash. The part of an order that would take a position below zero in a non-shortable asset is not filled.
+7. **Delisting.** A position in an asset that delists becomes cash at the close of its last trading day: `shares * close * (1 + delisting_return)`. NAV on that day already includes it.
 
 An engine that sizes at the decision close, or rounds to whole shares, is not wrong. Outside T2, scenarios are built so the two sizing rules agree (see the next section). Whole-share engines are a known limitation.
 

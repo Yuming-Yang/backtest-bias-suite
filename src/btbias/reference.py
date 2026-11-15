@@ -11,12 +11,14 @@ follows is listed under "Reference semantics" in SPEC.md:
    decisions made on the last day never fill.
 5. ``View.universe`` is the index membership at ``as_of`` if the scenario has
    a membership table, otherwise the assets with a price at ``as_of``.
+6. A position in an asset that delists is turned into cash at the close of
+   its last trading day: ``shares * close * (1 + delisting_return)``.
 
 Each rule lives in its own small method so a mutant (see ``btbias.mutants``)
 can break exactly one of them by overriding one method.
 
-Corporate actions, delistings and shorting are added together with their
-traps (T6, T4, T8). Until then the engine refuses scenarios and strategies
+Corporate actions and shorting are added together with their traps (T6,
+T8). Until then the engine refuses scenarios and strategies
 that need them, rather than silently getting them wrong.
 """
 
@@ -47,6 +49,7 @@ class ReferenceEngine:
         navs: list[float] = []
         held: list[pd.Series] = []
         fills: list[dict[str, object]] = []
+        delist_date = pd.to_datetime(scenario.listings["delist_date"])
 
         for t in scenario.calendar:
             if pending is not None:
@@ -54,6 +57,9 @@ class ReferenceEngine:
                 cash = self.fill(scenario, t, pending, price, last_close, shares, cash, fills)
                 pending = None
             last_close = scenario.close.loc[t].combine_first(last_close)
+            for asset in delist_date.index[delist_date == t]:
+                cash += self.delisting_proceeds(scenario, asset, shares[asset], last_close[asset])
+                shares[asset] = 0.0
             value = (shares * last_close).fillna(0.0)
             nav = cash + float(value.sum())
             weights = value / nav
@@ -101,6 +107,12 @@ class ReferenceEngine:
             return scenario.open.loc[t]
         return scenario.close.loc[t]
 
+    def delisting_proceeds(
+        self, scenario: Scenario, asset: str, shares: float, last_close: float
+    ) -> float:
+        """Cash received for ``shares`` of an asset that delists after this close."""
+        return shares * last_close * (1 + float(scenario.listings.loc[asset, "delisting_return"]))
+
     def transaction_cost(self, scenario: Scenario, notional: float) -> float:
         return scenario.cost_model.rate * abs(notional)
 
@@ -141,8 +153,6 @@ class ReferenceEngine:
 def _require_supported(scenario: Scenario) -> None:
     if not scenario.corporate_actions.empty:
         raise NotImplementedError("corporate actions are not supported yet (T6)")
-    if scenario.listings["delist_date"].notna().any():
-        raise NotImplementedError("delistings are not supported yet (T4)")
 
 
 def _check_target(target: pd.Series, assets: list[str]) -> pd.Series:

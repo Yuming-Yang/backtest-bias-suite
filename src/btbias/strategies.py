@@ -58,3 +58,61 @@ class Momentum:
     def target_weights(self, view: View) -> pd.Series:
         self.seen.append(view)
         return top_mover(view.close)
+
+
+def equal_weight(universe: tuple[str, ...]) -> pd.Series:
+    """Split ``MAX_GROSS`` equally across ``universe``."""
+    if not universe:
+        return pd.Series(dtype=float)
+    return pd.Series(MAX_GROSS / len(universe), index=list(universe))
+
+
+@dataclass
+class EqualWeightUniverse:
+    """Holds every asset the engine offers, equally weighted.
+
+    "Hold the index" in its simplest form. It reads only ``View.universe``,
+    so its NAV shows what the engine let it hold, and the recorded views
+    show what the engine offered on each day.
+    """
+
+    name: str = "equal-weight-universe"
+    seen: list[View] = field(default_factory=list)
+
+    def target_weights(self, view: View) -> pd.Series:
+        self.seen.append(view)
+        return equal_weight(view.universe)
+
+
+def best_reported(fundamentals: pd.DataFrame) -> pd.Series:
+    """Put ``MAX_GROSS`` in the asset whose latest known value is highest.
+
+    "Latest known" is the row with the latest period end and, within it, the
+    latest publish date, among the rows the view contains. A view that shows
+    reports before they are published, or restated values before the
+    restatement, changes which asset that is.
+    """
+    if fundamentals.empty:
+        return pd.Series(dtype=float)
+    latest = (
+        fundamentals.assign(
+            period_end=pd.to_datetime(fundamentals["period_end"]),
+            publish_date=pd.to_datetime(fundamentals["publish_date"]),
+        )
+        .sort_values(["period_end", "publish_date"])
+        .groupby("asset")["value"]
+        .last()
+    )
+    return pd.Series({latest.astype(float).idxmax(): MAX_GROSS})
+
+
+@dataclass
+class FundamentalTilt:
+    """Holds the asset with the best latest-known fundamental; records views."""
+
+    name: str = "fundamental-tilt"
+    seen: list[View] = field(default_factory=list)
+
+    def target_weights(self, view: View) -> pd.Series:
+        self.seen.append(view)
+        return best_reported(view.fundamentals)

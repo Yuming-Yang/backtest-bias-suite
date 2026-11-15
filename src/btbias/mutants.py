@@ -36,7 +36,40 @@ class SameCloseEngine(ReferenceEngine):
 
     def fill_prices(self, scenario: Scenario, t: pd.Timestamp) -> pd.Series:
         decision_day = scenario.calendar.get_loc(t) - 1
-        return scenario.close.iloc[decision_day]
+        # Right fill day, wrong price: an asset that does not trade on the
+        # fill day still cannot fill, so this stays one bug and not two.
+        return scenario.close.iloc[decision_day].where(scenario.open.loc[t].notna())
+
+
+class PeriodEndEngine(ReferenceEngine):
+    """T3: treats fundamentals as known from the end of their period.
+
+    Reports show up before they are published, and restatements, which share
+    the original's period end, show up at the same time as the original.
+    """
+
+    name = "mutant-T3-period-end"
+
+    def view(self, scenario: Scenario, t: pd.Timestamp, weights: pd.Series) -> View:
+        v = super().view(scenario, t, weights)
+        fu = scenario.fundamentals
+        if fu.empty:
+            return v
+        return replace(v, fundamentals=fu[pd.to_datetime(fu["period_end"]) <= t])
+
+
+class SurvivorsOnlyEngine(ReferenceEngine):
+    """T4: offers only assets still listed at the end of the data.
+
+    This is what a backtest sees when its data comes from a snapshot of
+    today's tickers: every company that later delisted is simply absent.
+    """
+
+    name = "mutant-T4-survivors-only"
+
+    def universe(self, scenario: Scenario, t: pd.Timestamp) -> tuple[str, ...]:
+        dead = set(scenario.listings.index[scenario.listings["delist_date"].notna()])
+        return tuple(a for a in super().universe(scenario, t) if a not in dead)
 
 
 class ZeroCostEngine(ReferenceEngine):
@@ -48,9 +81,23 @@ class ZeroCostEngine(ReferenceEngine):
         return 0.0
 
 
+class TodaysConstituentsEngine(ReferenceEngine):
+    """T7: uses the index members on the last day for every day."""
+
+    name = "mutant-T7-todays-constituents"
+
+    def universe(self, scenario: Scenario, t: pd.Timestamp) -> tuple[str, ...]:
+        if scenario.membership.empty:
+            return super().universe(scenario, t)
+        return super().universe(scenario, scenario.calendar[-1])
+
+
 MUTANTS: dict[str, type[ReferenceEngine]] = {
     "T1": PeekingEngine,
     "T2": SameCloseEngine,
+    "T3": PeriodEndEngine,
+    "T4": SurvivorsOnlyEngine,
     "T5": ZeroCostEngine,
+    "T7": TodaysConstituentsEngine,
 }
 """Trap id -> the mutant that trap must catch."""

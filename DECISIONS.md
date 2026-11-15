@@ -153,3 +153,43 @@ See the Decisions section of [SPEC.md](SPEC.md): names, the default fill convent
 **Decision.** `truth.no_cost_nav` computes NAV from weights and returns between fill prices, as a cumulative product. It requires a price for every asset on every day and no costs.
 
 **Why.** Without costs, rebalancing to target weights at a fill makes growth until the next fill exactly `1 + w . r`. That shares no code path with the share-and-cash bookkeeping of the reference engine, so the two agreeing is evidence, not a tautology.
+
+## 2026-11-15 — Delisting proceeds are booked at the last close
+
+**Decision.** A position in an asset that delists becomes cash at the close of its last trading day, at `shares * close * (1 + delisting_return)`. This is reference semantics rule 7 in SPEC.md.
+
+**Why.** Booking the cash the next day would lose the delisting return whenever the last trading day is the last day of the scenario. It would also leave a position in the books that can no longer be priced. Booked at the close, NAV on the last trading day already shows what holders received, and the strategy deciding that evening sees it as cash.
+
+**Dropped.** Paying out on the next trading day. It is closer to how cash from a merger actually settles, but the extra day of delay changes no test and adds an edge case.
+
+## 2026-11-15 — The T2 mutant cannot fill an asset that does not trade
+
+**Decision.** `SameCloseEngine` uses the decision-day close only for assets that trade on the fill day.
+
+**Why.** Without this, an order decided on an asset's last trading day filled the next day at that close, buying a stock that no longer exists. That is a second bug, and it made the T2 mutant fail T4 too. The isolation table assumed opens equal previous closes wherever there is a price, and delistings are where "wherever there is a price" starts to matter.
+
+## 2026-11-15 — T3 checks that rows are shown exactly as published
+
+**Decision.** Besides "no row published after the decision day", the T3 probe requires every visible row to match a scenario row on all five columns.
+
+**Why.** A common leak keeps only the latest value of each report but under its first publish date. Publish dates then look fine and only the values are wrong. Matching whole rows catches this, while still allowing an engine to show fewer rows (hiding data is not lookahead).
+
+**Limit.** The synthetic fundamentals do not predict returns, so a leak changes NAV by noise rather than by a systematic gain. The test only needs the NAV to differ, and a guard checks that the leak changes the strategy's pick on at least 20 days.
+
+## 2026-11-15 — Survivorship is staged through the universe
+
+**Decision.** The T4 mutant drops every asset that ever delists from the universe, as a data set built from today's tickers would. Dropping the delisting return is covered by a separate test engine, not a second mutant.
+
+**Why.** One mutant per trap keeps the matrix square. Both bugs make NAV wrong in the same scenario, so the outcome check covers both.
+
+## 2026-11-15 — T7 stages realistic index changes
+
+**Decision.** In T7, the assets that join the index drift up beforehand and those that leave drift down, by 0.8% a day.
+
+**Why.** Index additions tend to follow strong performance and deletions weak performance. With that in place the mutant (today's constituents throughout) ends 41% above the correct NAV, which shows why the bias matters and not only that the test can detect it. Detection does not depend on the drift: the probe fires on the first day.
+
+## 2026-11-15 — The example adapter runs only the traps its engine models
+
+**Decision.** The example vectorized adapter runs T1, T2 and T5.
+
+**Why.** It builds views from prices alone and its engine needs a price for every asset on every day. Running T3, T4 and T7 against it would only show what the example leaves out. Whether to extend it depends on how much fits in the 30-line adapter limit.

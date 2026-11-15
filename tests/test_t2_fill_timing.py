@@ -3,6 +3,7 @@
 from dataclasses import replace
 
 import numpy as np
+import pandas as pd
 
 from btbias import (
     BacktestResult,
@@ -15,6 +16,8 @@ from btbias import (
 from btbias.mutants import SameCloseEngine
 from btbias.trap import run_trap
 from btbias.traps import T2
+
+from builders import Fixed, make_scenario
 
 
 def test_reference_engine_passes_t2() -> None:
@@ -51,3 +54,13 @@ def test_right_nav_with_wrong_reported_prices_still_fails() -> None:
     result = run_trap(MisreportedPrices(), T2)
     assert result.status is Status.FAIL
     assert "wrong price" in result.detail and "NAV" not in result.detail
+
+
+def test_same_close_mutant_does_not_fill_assets_that_no_longer_trade() -> None:
+    # BBB delists on day 2. An order decided that evening must be cancelled
+    # by the mutant too, or it would carry a second bug into T4.
+    scenario = make_scenario()
+    targets = {k: {"AAA": 0.4, "BBB": 0.4} for k in range(5)}
+    trades = SameCloseEngine().run(scenario, Fixed(targets)).trades
+    bbb_days = pd.to_datetime(trades.loc[trades["asset"] == "BBB", "date"])
+    assert (bbb_days <= scenario.calendar[2]).all()

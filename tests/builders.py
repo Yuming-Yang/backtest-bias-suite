@@ -1,10 +1,12 @@
 """Hand-built scenarios shared by tests."""
 
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
+from btbias.protocol import View
 from btbias.scenario import Scenario
 
 CALENDAR = pd.bdate_range("2024-01-01", periods=5)
@@ -33,3 +35,17 @@ def make_scenario(**overrides: Any) -> Scenario:
     }
     kwargs.update(overrides)
     return Scenario(**kwargs)
+
+
+@dataclass
+class Fixed:
+    """Returns a preset target per day and records every view."""
+
+    targets: dict[int, dict[str, float]]
+    name: str = "fixed"
+    seen: list[View] = field(default_factory=list)
+
+    def target_weights(self, view: View) -> pd.Series:
+        self.seen.append(view)
+        day = len(self.seen) - 1
+        return pd.Series(self.targets.get(day, {}), dtype=float)
