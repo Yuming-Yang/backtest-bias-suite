@@ -1,6 +1,6 @@
 # SPEC: Backtest Bias Test Suite
 
-Status: v1 scope and reference semantics fixed on 2026-11-14.
+Status: v1 complete on 2026-11-15. Scope and reference semantics fixed on 2026-11-14.
 
 ## Problem
 
@@ -69,8 +69,8 @@ Ranked by how common they are and how cleanly they can be tested deterministical
 - [x] For each of T1–T8, the matching mutant fails that trap's test and passes all the others; the full mutation matrix is printed in the README.
 - [x] Ground truth for every outcome check is computed by code independent of the reference engine (not by calling the engine itself).
 - [x] An example adapter for a second engine style, written as a vectorized pandas engine, is 30 lines or fewer and runs in CI.
-- [ ] `uv run pytest` passes in CI (GitHub Actions) with ruff clean.
-- [ ] A fresh clone can follow the README to run the suite against the reference engine in under a minute.
+- [x] `uv run pytest` passes in CI (GitHub Actions) with ruff clean.
+- [x] A fresh clone can follow the README to run the suite against the reference engine in under a minute.
 - [x] README: one-sentence problem, quick-start demo, mutation-matrix results, design trade-offs, Limitations.
 
 ## Milestones
