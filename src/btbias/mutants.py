@@ -12,6 +12,7 @@ from dataclasses import replace
 
 import pandas as pd
 
+from btbias.generator import ex_date_price
 from btbias.protocol import View
 from btbias.reference import ReferenceEngine
 from btbias.scenario import Scenario
@@ -36,9 +37,21 @@ class SameCloseEngine(ReferenceEngine):
 
     def fill_prices(self, scenario: Scenario, t: pd.Timestamp) -> pd.Series:
         decision_day = scenario.calendar.get_loc(t) - 1
+        price = scenario.close.iloc[decision_day].copy()
+        # The decision close is quoted in shares from before any split or
+        # dividend on the fill day; restate it in today's shares, as an
+        # engine that really filled at that close would have been.
+        ca = scenario.corporate_actions
+        if not ca.empty:
+            today = ca[pd.to_datetime(ca["ex_date"]) == t]
+            for asset, g in today.groupby("asset"):
+                v = dict(zip(g["kind"], g["value"].astype(float), strict=True))
+                price[asset] = ex_date_price(
+                    price[asset], v.get("dividend", 0.0), v.get("split", 1.0)
+                )
         # Right fill day, wrong price: an asset that does not trade on the
         # fill day still cannot fill, so this stays one bug and not two.
-        return scenario.close.iloc[decision_day].where(scenario.open.loc[t].notna())
+        return price.where(scenario.open.loc[t].notna())
 
 
 class PeriodEndEngine(ReferenceEngine):
