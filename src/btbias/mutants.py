@@ -81,11 +81,23 @@ class ZeroCostEngine(ReferenceEngine):
         return 0.0
 
 
+class TodaysConstituentsEngine(ReferenceEngine):
+    """T7: uses the index members on the last day for every day."""
+
+    name = "mutant-T7-todays-constituents"
+
+    def universe(self, scenario: Scenario, t: pd.Timestamp) -> tuple[str, ...]:
+        if scenario.membership.empty:
+            return super().universe(scenario, t)
+        return super().universe(scenario, scenario.calendar[-1])
+
+
 MUTANTS: dict[str, type[ReferenceEngine]] = {
     "T1": PeekingEngine,
     "T2": SameCloseEngine,
     "T3": PeriodEndEngine,
     "T4": SurvivorsOnlyEngine,
     "T5": ZeroCostEngine,
+    "T7": TodaysConstituentsEngine,
 }
 """Trap id -> the mutant that trap must catch."""
