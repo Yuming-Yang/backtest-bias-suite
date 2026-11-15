@@ -13,6 +13,7 @@ from btbias import (
     Status,
     Strategy,
 )
+from btbias.generator import flat_total_return_prices, simple_market, trading_days
 from btbias.mutants import SameCloseEngine
 from btbias.trap import run_trap
 from btbias.traps import T2
@@ -64,3 +65,24 @@ def test_same_close_mutant_does_not_fill_assets_that_no_longer_trade() -> None:
     trades = SameCloseEngine().run(scenario, Fixed(targets)).trades
     bbb_days = pd.to_datetime(trades.loc[trades["asset"] == "BBB", "date"])
     assert (bbb_days <= scenario.calendar[2]).all()
+
+
+def test_same_close_mutant_restates_the_decision_close_after_a_split() -> None:
+    # Where opens equal the economic previous close, the mutant must match
+    # the reference engine, ex-dates included, or it would fail T6 too.
+    cal = trading_days(6)
+    actions = pd.DataFrame(
+        {
+            "asset": ["A", "A", "B"],
+            "ex_date": [cal[2], cal[4], cal[3]],
+            "kind": ["split", "dividend", "split"],
+            "value": [2.0, 1.5, 3.0],
+        }
+    )
+    open_, close = flat_total_return_prices(cal, {"A": 100.0, "B": 70.0}, actions)
+    scenario = simple_market("actions", open_, close, corporate_actions=actions)
+    targets = {k: {"A": 0.3 + 0.05 * k, "B": 0.5 - 0.05 * k} for k in range(6)}
+    ref = ReferenceEngine().run(scenario, Fixed(targets))
+    mutant = SameCloseEngine().run(scenario, Fixed(targets))
+    pd.testing.assert_series_equal(mutant.nav, ref.nav, rtol=0, atol=0)
+    pd.testing.assert_frame_equal(mutant.trades, ref.trades)

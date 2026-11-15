@@ -10,7 +10,12 @@ import pytest
 import btbias
 from btbias.generator import trading_days
 from btbias.scenario import ExecutionConvention
-from btbias.truth import flat_market_nav, listed_market_nav, no_cost_nav
+from btbias.truth import (
+    flat_market_borrow_nav,
+    flat_market_nav,
+    listed_market_nav,
+    no_cost_nav,
+)
 
 
 def test_flat_market_nav_matches_a_hand_calculation() -> None:
@@ -108,3 +113,13 @@ def test_listed_market_nav_refuses_markets_it_cannot_price() -> None:
     halted.iloc[1] = np.nan
     with pytest.raises(ValueError, match="restarts"):
         listed_market_nav(schedule, halted.shift(1), halted, listings, 100.0)
+
+
+def test_flat_market_borrow_nav_charges_shorts_and_blocks_hard_to_borrow() -> None:
+    cal = trading_days(3)
+    schedule = pd.DataFrame({"A": [0.5] * 3, "B": [-0.2] * 3, "C": [-0.3] * 3}, index=cal)
+    nav = flat_market_borrow_nav(schedule, 100.0, 0.01, frozenset({"C"}))
+    # Only B is shorted (C is hard to borrow); 1% of the B short each day.
+    nav1 = 100.0 - 0.01 * 20.0
+    nav2 = nav1 - 0.01 * 0.2 * nav1
+    np.testing.assert_allclose(nav, [100.0, nav1, nav2], rtol=1e-14)

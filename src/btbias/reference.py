@@ -13,13 +13,19 @@ follows is listed under "Reference semantics" in SPEC.md:
    a membership table, otherwise the assets with a price at ``as_of``.
 6. A position in an asset that delists is turned into cash at the close of
    its last trading day: ``shares * close * (1 + delisting_return)``.
+7. Splits and dividends take effect at the open of the ex-date, before that
+   day's fills: a split multiplies shares by its ratio, a dividend pays
+   ``shares * amount`` in cash. On a day with both, the dividend is paid on
+   the shares held before the split.
+8. Each day a short pays ``borrow rate * |short market value at the close|``
+   from cash. An order may not take a hard-to-borrow asset below zero
+   shares; the part that would is not filled.
 
 Each rule lives in its own small method so a mutant (see ``btbias.mutants``)
 can break exactly one of them by overriding one method.
 
-Corporate actions and shorting are added together with their traps (T6,
-T8). Until then the engine refuses scenarios and strategies
-that need them, rather than silently getting them wrong.
+Anything the engine does not model (whole shares, margin, recalls) is out
+of scope for the suite, see SPEC.md.
 """
 
 from __future__ import annotations
@@ -28,7 +34,7 @@ import numpy as np
 import pandas as pd
 
 from btbias.protocol import TRADE_COLUMNS, BacktestResult, Strategy, View
-from btbias.scenario import ExecutionConvention, Scenario
+from btbias.scenario import BorrowModel, ExecutionConvention, Scenario
 
 MIN_TRADE = 1e-12
 """Trades smaller than this fraction of NAV are skipped as floating-point noise."""
@@ -40,7 +46,6 @@ class ReferenceEngine:
     name = "reference"
 
     def run(self, scenario: Scenario, strategy: Strategy) -> BacktestResult:
-        _require_supported(scenario)
         assets = list(scenario.assets)
         shares = pd.Series(0.0, index=assets)
         cash = float(scenario.initial_cash)
@@ -52,6 +57,7 @@ class ReferenceEngine:
         delist_date = pd.to_datetime(scenario.listings["delist_date"])
 
         for t in scenario.calendar:
+            cash += self.corporate_actions(scenario, t, shares)
             if pending is not None:
                 price = self.fill_prices(scenario, t)
                 cash = self.fill(scenario, t, pending, price, last_close, shares, cash, fills)
@@ -61,6 +67,7 @@ class ReferenceEngine:
                 cash += self.delisting_proceeds(scenario, asset, shares[asset], last_close[asset])
                 shares[asset] = 0.0
             value = (shares * last_close).fillna(0.0)
+            cash -= self.borrow_fee(scenario, float(-value[value < 0].sum()))
             nav = cash + float(value.sum())
             weights = value / nav
             navs.append(nav)
@@ -107,11 +114,32 @@ class ReferenceEngine:
             return scenario.open.loc[t]
         return scenario.close.loc[t]
 
+    def corporate_actions(self, scenario: Scenario, t: pd.Timestamp, shares: pd.Series) -> float:
+        """Apply splits (to ``shares``, in place) at the open of ``t``; return dividend cash."""
+        ca = scenario.corporate_actions
+        if ca.empty:
+            return 0.0
+        today = ca[pd.to_datetime(ca["ex_date"]) == t]
+        cash = 0.0
+        for row in today[today["kind"] == "dividend"].itertuples():
+            cash += shares[row.asset] * float(row.value)
+        for row in today[today["kind"] == "split"].itertuples():
+            shares[row.asset] *= float(row.value)
+        return cash
+
     def delisting_proceeds(
         self, scenario: Scenario, asset: str, shares: float, last_close: float
     ) -> float:
         """Cash received for ``shares`` of an asset that delists after this close."""
         return shares * last_close * (1 + float(scenario.listings.loc[asset, "delisting_return"]))
+
+    def borrow_model(self, scenario: Scenario) -> BorrowModel:
+        """The borrow terms the engine applies: the scenario's own."""
+        return scenario.borrow
+
+    def borrow_fee(self, scenario: Scenario, short_value: float) -> float:
+        """Today's fee for ``short_value``, the market value of all shorts at the close."""
+        return self.borrow_model(scenario).daily_rate * short_value
 
     def transaction_cost(self, scenario: Scenario, notional: float) -> float:
         return scenario.cost_model.rate * abs(notional)
@@ -134,10 +162,14 @@ class ReferenceEngine:
         """
         mark = price.combine_first(last_close)
         nav = cash + float((shares * mark).fillna(0.0).sum())
+        hard_to_borrow = self.borrow_model(scenario).hard_to_borrow
         for asset in shares.index:
             if pd.isna(price[asset]):
                 continue  # no price on the fill day: the order is cancelled
-            delta = target.get(asset, 0.0) * nav / price[asset] - shares[asset]
+            wanted = target.get(asset, 0.0) * nav / price[asset]
+            if asset in hard_to_borrow:
+                wanted = max(wanted, min(shares[asset], 0.0))  # no new or larger short
+            delta = wanted - shares[asset]
             notional = delta * price[asset]
             if abs(notional) <= MIN_TRADE * abs(nav):
                 continue
@@ -150,11 +182,6 @@ class ReferenceEngine:
         return cash
 
 
-def _require_supported(scenario: Scenario) -> None:
-    if not scenario.corporate_actions.empty:
-        raise NotImplementedError("corporate actions are not supported yet (T6)")
-
-
 def _check_target(target: pd.Series, assets: list[str]) -> pd.Series:
     unknown = set(target.index) - set(assets)
     if unknown:
@@ -162,6 +189,4 @@ def _check_target(target: pd.Series, assets: list[str]) -> pd.Series:
     values = target.astype(float)
     if not np.isfinite(values.to_numpy()).all():
         raise ValueError("target weights must be finite")
-    if (values < 0).any():
-        raise NotImplementedError("short positions are not supported yet (T8)")
     return values

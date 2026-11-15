@@ -48,6 +48,26 @@ class CostModel:
             raise ScenarioError(f"cost rate must be finite and >= 0, got {self.rate}")
 
 
+@dataclass(frozen=True)
+class BorrowModel:
+    """What shorting costs and which assets can be shorted.
+
+    ``daily_rate`` is charged each day on the market value of every short
+    position at the close, so 0.0002 is about 5% a year. Assets in
+    ``hard_to_borrow`` cannot be shorted at all. The default, free and
+    unlimited, is what a scenario without shorts needs.
+    """
+
+    daily_rate: float = 0.0
+    hard_to_borrow: frozenset[str] = frozenset()
+
+    def __post_init__(self) -> None:
+        if not np.isfinite(self.daily_rate) or self.daily_rate < 0:
+            raise ScenarioError(f"borrow rate must be finite and >= 0, got {self.daily_rate}")
+        if not isinstance(self.hard_to_borrow, frozenset):
+            raise ScenarioError("hard_to_borrow must be a frozenset of asset names")
+
+
 CORPORATE_ACTION_COLUMNS = ("asset", "ex_date", "kind", "value")
 FUNDAMENTAL_COLUMNS = ("asset", "field", "period_end", "publish_date", "value")
 LISTING_COLUMNS = ("list_date", "delist_date", "delisting_return")
@@ -82,6 +102,7 @@ class Scenario:
         membership: Index membership intervals ``asset, start, end``,
             half-open ``[start, end)``; ``end`` is NaT if still a member.
         cost_model: Transaction costs the engine must charge.
+        borrow: Borrow fee and shortable assets the engine must respect.
         convention: When orders are filled.
         initial_cash: Starting NAV.
     """
@@ -97,6 +118,7 @@ class Scenario:
     fundamentals: pd.DataFrame = field(default_factory=lambda: empty_frame(FUNDAMENTAL_COLUMNS))
     membership: pd.DataFrame = field(default_factory=lambda: empty_frame(MEMBERSHIP_COLUMNS))
     cost_model: CostModel = field(default_factory=CostModel)
+    borrow: BorrowModel = field(default_factory=BorrowModel)
     convention: ExecutionConvention = ExecutionConvention.NEXT_OPEN
     initial_cash: float = 1_000_000.0
 
@@ -107,6 +129,9 @@ class Scenario:
         self._check_corporate_actions()
         self._check_fundamentals()
         self._check_membership()
+        _require_known_assets(
+            "borrow.hard_to_borrow", pd.Series(sorted(self.borrow.hard_to_borrow)), self.assets
+        )
         if not np.isfinite(self.initial_cash) or self.initial_cash <= 0:
             raise ScenarioError(f"initial_cash must be finite and > 0, got {self.initial_cash}")
         if not isinstance(self.convention, ExecutionConvention):

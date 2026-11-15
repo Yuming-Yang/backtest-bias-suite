@@ -102,3 +102,30 @@ def listed_market_nav(
         dlret = float(listings.loc[asset, "delisting_return"])
         r.loc[day, asset] = (1 + r.loc[day, asset]) * (1 + dlret) - 1
     return initial_cash * (1 + (held * r.fillna(0.0)).sum(axis=1)).cumprod()
+
+
+def flat_market_borrow_nav(
+    schedule: pd.DataFrame,
+    initial_cash: float,
+    daily_rate: float,
+    hard_to_borrow: frozenset[str],
+) -> pd.Series:
+    """NAV of a long-short schedule on a market where no price moves, with no trading costs.
+
+    As in ``flat_market_nav``, everything is in money. At each fill the money
+    in each asset moves to ``weight * NAV``, except that a hard-to-borrow
+    asset cannot go below zero (or below its current short, if it had one).
+    At that day's close every short pays ``daily_rate`` on its size, and that
+    fee is the only thing that moves NAV.
+    """
+    nav = float(initial_cash)
+    held = pd.Series(0.0, index=schedule.columns)
+    hard = schedule.columns.isin(sorted(hard_to_borrow))
+    navs = [nav]
+    for k in range(1, len(schedule)):
+        target = schedule.iloc[k - 1].fillna(0.0) * nav
+        floor = held.clip(upper=0.0)
+        held = target.where(~hard, target.combine(floor, max))
+        nav -= daily_rate * float(-held[held < 0].sum())
+        navs.append(nav)
+    return pd.Series(navs, index=schedule.index)

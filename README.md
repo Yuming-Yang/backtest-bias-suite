@@ -6,7 +6,7 @@ See [SPEC.md](SPEC.md) for the problem definition, scope and acceptance criteria
 
 ## Current state
 
-Six of the eight v1 traps run end to end: T1 (price lookahead), T2 (signal/execution misalignment), T3 (fundamentals not point-in-time), T4 (survivorship), T5 (zero transaction costs) and T7 (universe membership lookahead). T6 and T8 are next.
+All eight v1 traps run end to end: T1 (price lookahead), T2 (signal/execution misalignment), T3 (fundamentals not point-in-time), T4 (survivorship), T5 (zero transaction costs), T6 (corporate actions unadjusted), T7 (universe membership lookahead) and T8 (free and unlimited shorting).
 
 ```python
 from btbias import ReferenceEngine, run_suite

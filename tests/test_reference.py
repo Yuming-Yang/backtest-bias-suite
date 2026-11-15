@@ -4,13 +4,20 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from btbias import CostModel, ExecutionConvention, Scenario
-from btbias.generator import listed_throughout, random_walk, simple_market, trading_days
+from btbias import BorrowModel, CostModel, ExecutionConvention, Scenario
+from btbias.generator import (
+    flat_total_return_prices,
+    listed_throughout,
+    random_walk,
+    simple_market,
+    trading_days,
+)
 from btbias.reference import ReferenceEngine
 
 from builders import Fixed, make_scenario
 
 CAL = trading_days(3)
+CAL4 = trading_days(4)
 
 
 def _market(convention: ExecutionConvention = ExecutionConvention.NEXT_OPEN) -> Scenario:
@@ -130,13 +137,8 @@ def test_order_for_an_asset_without_a_price_on_the_fill_day_is_cancelled() -> No
     np.testing.assert_allclose(result.weights.iloc[2], [0.4, 0.0])
 
 
-def test_engine_refuses_features_it_does_not_model_yet() -> None:
+def test_engine_refuses_targets_it_cannot_trade() -> None:
     engine = ReferenceEngine()
-    split = pd.DataFrame({"asset": ["AAA"], "ex_date": [CAL[1]], "kind": ["split"], "value": [2.0]})
-    with pytest.raises(NotImplementedError, match="corporate actions"):
-        engine.run(make_scenario(corporate_actions=split), Fixed({}))
-    with pytest.raises(NotImplementedError, match="short"):
-        engine.run(_market(), Fixed({0: {"A": -0.5}}))
     with pytest.raises(ValueError, match="unknown assets"):
         engine.run(_market(), Fixed({0: {"ZZZ": 0.5}}))
 
@@ -164,3 +166,76 @@ def test_delisting_turns_the_position_into_cash_at_the_last_close() -> None:
     # From that close on BBB is cash: zero weight and no further fills.
     assert (result.weights["BBB"].iloc[2:] == 0.0).all()
     assert (pd.to_datetime(bbb["date"]) <= day2).all()
+
+
+def test_splits_and_dividends_leave_an_unchanged_company_unchanged() -> None:
+    cal = trading_days(5)
+    actions = pd.DataFrame(
+        {
+            "asset": ["A", "B"],
+            "ex_date": [cal[2], cal[3]],
+            "kind": ["split", "dividend"],
+            "value": [2.0, 1.0],
+        }
+    )
+    open_, close = flat_total_return_prices(cal, {"A": 100.0, "B": 50.0}, actions)
+    assert close["A"].tolist() == [100.0, 100.0, 50.0, 50.0, 50.0]
+    assert close["B"].tolist() == [50.0, 50.0, 50.0, 49.0, 49.0]
+    scenario = simple_market("actions", open_, close, corporate_actions=actions)
+    result = ReferenceEngine().run(scenario, Fixed({k: {"A": 0.4, "B": 0.4} for k in range(5)}))
+
+    np.testing.assert_allclose(result.nav, 1_000_000.0, rtol=1e-12)
+    # The split needs no trade. The dividend moves cash out of B (weight
+    # 0.4 -> 0.392), so on its ex-date the engine buys B back up, and nothing else.
+    trades = result.trades
+    assert set(trades["date"]) == {cal[1], cal[3]}
+    assert trades.loc[trades["date"] == cal[3], "asset"].tolist() == ["B"]
+    np.testing.assert_allclose(result.weights.iloc[1:].to_numpy(), 0.4, rtol=1e-12)
+
+
+def test_ignoring_a_split_looks_like_a_crash() -> None:
+    class IgnoresActions(ReferenceEngine):
+        def corporate_actions(
+            self, scenario: Scenario, t: pd.Timestamp, shares: pd.Series
+        ) -> float:
+            return 0.0
+
+    cal = trading_days(4)
+    actions = pd.DataFrame({"asset": ["A"], "ex_date": [cal[2]], "kind": ["split"], "value": [2.0]})
+    open_, close = flat_total_return_prices(cal, {"A": 100.0}, actions)
+    scenario = simple_market("split", open_, close, corporate_actions=actions)
+    nav = IgnoresActions().run(scenario, Fixed({0: {"A": 0.5}, 1: {"A": 0.5}})).nav
+    # Half the money sat in A, which "fell" 50% on the ex-date.
+    assert nav.iloc[2] == pytest.approx(750_000.0)
+
+
+def _flat_two_assets(borrow: BorrowModel) -> Scenario:
+    cal = trading_days(4)
+    open_ = pd.DataFrame({"A": [10.0] * 4, "B": [20.0] * 4}, index=cal)
+    return simple_market("flat", open_, open_.copy(), borrow=borrow)
+
+
+def test_a_short_pays_the_borrow_fee_on_its_value_at_each_close() -> None:
+    scenario = _flat_two_assets(BorrowModel(daily_rate=0.001))
+    long_short = {k: {"A": 0.5, "B": -0.3} for k in range(4)}
+    result = ReferenceEngine().run(scenario, Fixed(long_short))
+    # Day 1: short 300,000 of B, pay 0.1% of it at the close.
+    nav1 = 1_000_000 - 0.001 * 300_000
+    # Day 2 and 3: the short is resized to 30% of the new NAV, then charged.
+    nav2 = nav1 * (1 - 0.001 * 0.3)
+    nav3 = nav2 * (1 - 0.001 * 0.3)
+    np.testing.assert_allclose(result.nav, [1_000_000, nav1, nav2, nav3], rtol=1e-12)
+    assert (result.weights["B"].iloc[1:] < 0).all()
+
+
+def test_a_hard_to_borrow_asset_can_be_sold_to_zero_but_not_shorted() -> None:
+    scenario = _flat_two_assets(BorrowModel(daily_rate=0.001, hard_to_borrow=frozenset({"B"})))
+    targets = {0: {"A": 0.5, "B": 0.3}, 1: {"A": 0.5, "B": -0.3}, 2: {"A": 0.5, "B": -0.3}}
+    result = ReferenceEngine().run(scenario, Fixed(targets))
+    b = result.trades[result.trades["asset"] == "B"]
+    # Bought on day 1, sold to exactly zero on day 2, nothing on day 3.
+    assert b["date"].tolist() == [CAL4[1], CAL4[2]]
+    np.testing.assert_allclose(b["quantity"].sum(), 0.0, atol=1e-9)
+    assert (result.weights["B"] >= 0).all()
+    # Never short, so never charged: NAV does not move on flat prices.
+    np.testing.assert_allclose(result.nav, 1_000_000, rtol=1e-12)
