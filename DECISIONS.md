@@ -193,3 +193,25 @@ See the Decisions section of [SPEC.md](SPEC.md): names, the default fill convent
 **Decision.** The example vectorized adapter runs T1, T2 and T5.
 
 **Why.** It builds views from prices alone and its engine needs a price for every asset on every day. Running T3, T4 and T7 against it would only show what the example leaves out. Whether to extend it depends on how much fits in the 30-line adapter limit.
+
+## 2026-11-15 — T6 runs on companies whose value never changes
+
+**Decision.** T6's prices are flat in total-return terms: raw prices drop on each ex-date by the dividend and then the split ratio, and are otherwise constant. The expected NAV is the initial cash on every day.
+
+**Why.** It is the one ground truth nobody has to take on trust: if nothing about the companies changed, a correct backtest cannot make or lose money. An engine that ignores a split books it as a crash (the mutant ends 39% down); one that ignores dividends loses the payout. The strategy changes its allocation every day, so the engine also has to size orders correctly right after each action.
+
+**Dropped.** A random walk with corporate actions on top. Its ground truth would need adjusted prices, which is the very calculation T6 is testing.
+
+## 2026-11-15 — The T2 mutant restates the decision close across ex-dates
+
+**Decision.** On a fill day that is also an ex-date, `SameCloseEngine` converts the decision-day close into post-action shares before using it.
+
+**Why.** Otherwise it paid a pre-split price for post-split shares, a second bug that also failed T6. The conversion uses the same rule as the generator (dividend off, then divide by the ratio), so on T6's market the mutant matches the reference engine bit for bit. A test fails without it.
+
+## 2026-11-15 — Borrow terms are a model, like costs
+
+**Decision.** `Scenario.borrow` is a `BorrowModel`: one daily rate on the market value of shorts at each close, and a set of hard-to-borrow assets that cannot be shorted. The engine reads it through one method, and the T8 mutant overrides that method to return the free and unlimited default.
+
+**Why.** It mirrors how T5 treats the cost model, so "ignores the declared borrow terms" is one bug in one place. Splitting T8 into a fee mutant and an availability mutant would break the one-mutant-per-trap rule; instead, two test engines show that each half is caught on its own (no fee on NAV; shorting a hard-to-borrow name by name).
+
+**Dropped.** Per-asset borrow rates, time-varying availability and recalls. They are real, and listed under Known limits in SPEC.md, but a flat rate and a static list are enough to catch an engine that ignores borrowing.

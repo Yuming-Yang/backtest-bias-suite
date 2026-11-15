@@ -65,9 +65,9 @@ Ranked by how common they are and how cleanly they can be tested deterministical
 
 ## Acceptance criteria
 
-- [ ] The reference engine passes all v1 trap tests.
+- [x] The reference engine passes all v1 trap tests.
 - [ ] For each of T1–T8, the matching mutant fails that trap's test and passes all the others; the full mutation matrix is printed in the README.
-- [ ] Ground truth for every outcome check is computed by code independent of the reference engine (not by calling the engine itself).
+- [x] Ground truth for every outcome check is computed by code independent of the reference engine (not by calling the engine itself).
 - [ ] An example adapter for a second engine style, written as a vectorized pandas engine, is 30 lines or fewer and runs in CI.
 - [ ] `uv run pytest` passes in CI (GitHub Actions) with ruff clean.
 - [ ] A fresh clone can follow the README to run the suite against the reference engine in under a minute.
@@ -79,7 +79,7 @@ Ranked by how common they are and how cleanly they can be tested deterministical
 2. **Generator, reference engine and one trap end to end.** Seeded generator; minimal event-loop reference engine; T5 with its mutant; a first draft of the vectorized example adapter. T5 is the simplest trap, and the example adapter is the riskiest acceptance criterion, so both come early to test the contract before the other traps are built on it. Done.
 3. **Timing traps.** T1 and T2, with probes, outcome checks and mutants. Done.
 4. **Point-in-time data traps.** T3, T4 and T7. Done.
-5. **Accounting traps.** T6 and T8.
+5. **Accounting traps.** T6 and T8. Done.
 6. **Mutation matrix, CLI, final example adapter, README.**
 
 Each milestone is one branch and one PR.
@@ -116,6 +116,7 @@ What "correct" means for outcome checks. The reference engine and every ground t
 5. **`View.universe`.** If the scenario has a membership table, the index members at `as_of`. Otherwise the assets with a price at `as_of`.
 6. **Shorting.** A scenario declares a daily borrow rate and which assets can be borrowed. Each day a short pays `borrow_rate * |short market value at the close|` from cash. The part of an order that would take a position below zero in a non-shortable asset is not filled.
 7. **Delisting.** A position in an asset that delists becomes cash at the close of its last trading day: `shares * close * (1 + delisting_return)`. NAV on that day already includes it.
+8. **Corporate actions.** Splits and dividends take effect at the open of the ex-date, before that day's fills. A split multiplies shares by its ratio; a dividend pays `shares * amount` in cash. On a day with both, the dividend is paid on pre-split shares.
 
 An engine that sizes at the decision close, or rounds to whole shares, is not wrong. Outside T2, scenarios are built so the two sizing rules agree (see the next section). Whole-share engines are a known limitation.
 
