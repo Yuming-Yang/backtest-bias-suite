@@ -15,7 +15,7 @@ import pandas as pd
 from btbias.generator import ex_date_price
 from btbias.protocol import View
 from btbias.reference import ReferenceEngine
-from btbias.scenario import Scenario
+from btbias.scenario import BorrowModel, Scenario
 
 
 class PeekingEngine(ReferenceEngine):
@@ -114,6 +114,15 @@ class TodaysConstituentsEngine(ReferenceEngine):
         return super().universe(scenario, scenario.calendar[-1])
 
 
+class FreeShortingEngine(ReferenceEngine):
+    """T8: ignores the scenario's borrow terms: shorts anything, for free."""
+
+    name = "mutant-T8-free-shorting"
+
+    def borrow_model(self, scenario: Scenario) -> BorrowModel:
+        return BorrowModel()
+
+
 MUTANTS: dict[str, type[ReferenceEngine]] = {
     "T1": PeekingEngine,
     "T2": SameCloseEngine,
@@ -122,5 +131,6 @@ MUTANTS: dict[str, type[ReferenceEngine]] = {
     "T5": ZeroCostEngine,
     "T6": IgnoresCorporateActionsEngine,
     "T7": TodaysConstituentsEngine,
+    "T8": FreeShortingEngine,
 }
 """Trap id -> the mutant that trap must catch."""
