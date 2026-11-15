@@ -29,6 +29,16 @@ class PeekingEngine(ReferenceEngine):
         return replace(v, open=scenario.open.loc[:end], close=scenario.close.loc[:end])
 
 
+class SameCloseEngine(ReferenceEngine):
+    """T2: fills orders at the close the signal was computed on."""
+
+    name = "mutant-T2-same-close"
+
+    def fill_prices(self, scenario: Scenario, t: pd.Timestamp) -> pd.Series:
+        decision_day = scenario.calendar.get_loc(t) - 1
+        return scenario.close.iloc[decision_day]
+
+
 class ZeroCostEngine(ReferenceEngine):
     """T5: ignores the scenario's cost model and trades for free."""
 
@@ -40,6 +50,7 @@ class ZeroCostEngine(ReferenceEngine):
 
 MUTANTS: dict[str, type[ReferenceEngine]] = {
     "T1": PeekingEngine,
+    "T2": SameCloseEngine,
     "T5": ZeroCostEngine,
 }
 """Trap id -> the mutant that trap must catch."""
