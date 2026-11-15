@@ -36,6 +36,7 @@ import pytest
 from btbias.testing import ALL_TRAPS, assert_passes
 from my_adapter import MyAdapter
 
+
 @pytest.mark.parametrize("trap", ALL_TRAPS, ids=lambda t: t.id)
 def test_no_bias(trap):
     assert_passes(MyAdapter(), trap)
