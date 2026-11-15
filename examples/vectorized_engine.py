@@ -11,11 +11,15 @@ overnight, and the target depends on NAV, which depends on yesterday's costs.
 The textbook shortcut, cost = rate * |w_t - w_{t-1}| * NAV, skips the drift
 and lands a few parts per million away from the exact answer.
 
-Limits: fills at the next open only; every asset needs a price every day;
-no corporate actions, delistings or borrow fees.
+Fills happen at the next open. Missing prices mean the asset does not trade
+that day; an asset whose prices stop before the last day has delisted, and
+its delisting return is paid at its last close. Assets may not halt and
+restart.
 """
 
 from __future__ import annotations
+
+from collections.abc import Collection
 
 import numpy as np
 import pandas as pd
@@ -27,36 +31,68 @@ def backtest(
     close: pd.DataFrame,
     cost_rate: float,
     initial_cash: float,
+    *,
+    splits: pd.DataFrame | None = None,
+    dividends: pd.DataFrame | None = None,
+    delisting_returns: pd.Series | None = None,
+    borrow_rate: float = 0.0,
+    no_short: Collection[str] = (),
 ) -> tuple[pd.Series, pd.DataFrame, pd.DataFrame]:
     """Run a weight schedule.
 
     ``weights.loc[t]`` is the target decided at the close of ``t`` and filled
-    at the open of the next day. Returns NAV at each close, the money traded in
-    each asset at each open (buys > 0), and the weights held at each close.
-    """
-    if open_.isna().any().any() or close.isna().any().any():
-        raise ValueError("the example engine needs a price for every asset on every day")
-    o, c = open_.to_numpy(dtype=float), close.to_numpy(dtype=float)
-    w = weights.reindex(index=close.index, columns=close.columns).fillna(0.0).to_numpy(dtype=float)
-    n_days, n_assets = c.shape
+    at the open of the next day. ``splits`` (new shares per old share) and
+    ``dividends`` (cash per share) are date-by-asset tables of ex-date
+    events. Shorts pay ``borrow_rate`` a day on their value at the close, and
+    assets in ``no_short`` are never sold below zero.
 
-    value = np.zeros(n_assets)  # money held in each asset
+    Returns NAV at each close, the money traded in each asset at each open
+    (buys > 0), and the weights held at each close.
+    """
+    idx, cols = close.index, close.columns
+
+    def table(frame: pd.DataFrame | None, fill: float) -> np.ndarray:
+        if frame is None:
+            return np.full(close.shape, fill)
+        return frame.reindex(index=idx, columns=cols).fillna(fill).to_numpy(dtype=float)
+
+    o, c = open_.to_numpy(dtype=float), close.to_numpy(dtype=float)
+    w, split, div = table(weights, 0.0), table(splits, 1.0), table(dividends, 0.0)
+    dlret = np.zeros(len(cols))
+    if delisting_returns is not None:
+        dlret = delisting_returns.reindex(cols).fillna(0.0).to_numpy(dtype=float)
+    traded_any = ~np.isnan(c)
+    last_day = len(idx) - 1 - np.argmax(traded_any[::-1], axis=0)
+    delists = traded_any.any(axis=0) & (last_day < len(idx) - 1)
+    hard = cols.isin(list(no_short))
+
+    value = np.zeros(len(cols))  # money held in each asset, at the last price
     cash = float(initial_cash)
-    nav = np.empty(n_days)
-    traded = np.zeros((n_days, n_assets))
-    held = np.zeros((n_days, n_assets))
-    for t in range(n_days):
-        if t > 0:
-            value = value * o[t] / c[t - 1]  # overnight drift
-            target = w[t - 1] * (cash + value.sum())
-            traded[t] = target - value
-            cash -= traded[t].sum() + cost_rate * np.abs(traded[t]).sum()
-            value = target
-        value = value * c[t] / o[t]  # open to close
-        nav[t] = cash + value.sum()
-        held[t] = value / nav[t]
+    nav = np.empty(len(idx))
+    traded = np.zeros(close.shape)
+    held = np.zeros(close.shape)
+    with np.errstate(invalid="ignore"):
+        for t in range(len(idx)):
+            if t > 0:
+                live = (value != 0) & ~np.isnan(o[t])
+                shares = np.where(live, value / c[t - 1], 0.0)
+                cash += float(np.sum(shares * div[t]))  # dividends, on pre-split shares
+                value = np.where(live, shares * split[t] * o[t], value)  # overnight drift
+                target = w[t - 1] * (cash + value.sum())
+                target = np.where(np.isnan(o[t]), value, target)  # no price: cancelled
+                target = np.where(hard, np.maximum(target, np.minimum(value, 0.0)), target)
+                traded[t] = target - value
+                cash -= traded[t].sum() + cost_rate * np.abs(traded[t]).sum()
+                value = target
+            value = np.where(value != 0, value * c[t] / o[t], 0.0)  # open to close
+            ending = delists & (last_day == t)
+            cash += float(np.sum(np.where(ending, value * (1 + dlret), 0.0)))
+            value = np.where(ending, 0.0, value)
+            cash -= borrow_rate * float(-value[value < 0].sum())
+            nav[t] = cash + value.sum()
+            held[t] = value / nav[t]
 
     def frame(x: np.ndarray) -> pd.DataFrame:
-        return pd.DataFrame(x, index=close.index, columns=close.columns)
+        return pd.DataFrame(x, index=idx, columns=cols)
 
-    return pd.Series(nav, index=close.index), frame(traded), frame(held)
+    return pd.Series(nav, index=idx), frame(traded), frame(held)
