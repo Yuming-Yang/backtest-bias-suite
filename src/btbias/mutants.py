@@ -41,6 +41,23 @@ class SameCloseEngine(ReferenceEngine):
         return scenario.close.iloc[decision_day].where(scenario.open.loc[t].notna())
 
 
+class PeriodEndEngine(ReferenceEngine):
+    """T3: treats fundamentals as known from the end of their period.
+
+    Reports show up before they are published, and restatements, which share
+    the original's period end, show up at the same time as the original.
+    """
+
+    name = "mutant-T3-period-end"
+
+    def view(self, scenario: Scenario, t: pd.Timestamp, weights: pd.Series) -> View:
+        v = super().view(scenario, t, weights)
+        fu = scenario.fundamentals
+        if fu.empty:
+            return v
+        return replace(v, fundamentals=fu[pd.to_datetime(fu["period_end"]) <= t])
+
+
 class SurvivorsOnlyEngine(ReferenceEngine):
     """T4: offers only assets still listed at the end of the data.
 
@@ -67,6 +84,7 @@ class ZeroCostEngine(ReferenceEngine):
 MUTANTS: dict[str, type[ReferenceEngine]] = {
     "T1": PeekingEngine,
     "T2": SameCloseEngine,
+    "T3": PeriodEndEngine,
     "T4": SurvivorsOnlyEngine,
     "T5": ZeroCostEngine,
 }

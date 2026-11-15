@@ -7,6 +7,7 @@ from btbias.generator import (
     delist,
     flat_prices,
     listed_throughout,
+    random_fundamentals,
     random_walk,
     random_weights,
     simple_market,
@@ -89,3 +90,19 @@ def test_delist_removes_later_prices_and_records_the_return() -> None:
     assert close["CCC"].iloc[10:].isna().all() and close["CCC"].iloc[:10].notna().all()
     assert s.listings.loc["CCC", "delist_date"] == CAL[9]
     assert s.listings.loc["CCC", "delisting_return"] == -0.3
+
+
+def test_random_fundamentals_are_published_after_period_end_and_some_restated() -> None:
+    cal = trading_days(100)
+    fu = random_fundamentals(cal, ASSETS, seed=6)
+    lag = fu["publish_date"].map(cal.get_loc) - fu["period_end"].map(cal.get_loc)
+    assert (lag >= 5).all()
+    key = ["asset", "field", "period_end"]
+    restated = fu[fu.duplicated(subset=key, keep=False)]
+    assert len(restated) > 0
+    # A restatement is published later than the original and changes the value.
+    for _, g in restated.groupby(key):
+        g = g.sort_values("publish_date")
+        assert g["publish_date"].is_monotonic_increasing and g["value"].nunique() == 2
+    assert fu.equals(random_fundamentals(cal, ASSETS, seed=6))
+    simple_market("fund", *flat_prices(cal, dict.fromkeys(ASSETS, 10.0)), fundamentals=fu)

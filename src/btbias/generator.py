@@ -22,7 +22,7 @@ from collections.abc import Mapping, Sequence
 import numpy as np
 import pandas as pd
 
-from btbias.scenario import LISTING_COLUMNS, Scenario
+from btbias.scenario import FUNDAMENTAL_COLUMNS, LISTING_COLUMNS, Scenario
 
 MAX_GROSS = 0.95
 """Suite strategies never invest more than this, so cash stays positive after costs."""
@@ -103,6 +103,44 @@ def random_weights(
     rng = np.random.default_rng(seed)
     split = rng.dirichlet(np.ones(len(assets)), size=len(calendar))
     return pd.DataFrame(split * gross, index=calendar, columns=list(assets))
+
+
+def random_fundamentals(
+    calendar: pd.DatetimeIndex,
+    assets: Sequence[str],
+    *,
+    seed: int,
+    field: str = "eps",
+    period_days: int = 20,
+    publish_lag: tuple[int, int] = (5, 15),
+    restate_share: float = 0.4,
+    restate_lag: tuple[int, int] = (10, 25),
+) -> pd.DataFrame:
+    """Periodic reports with a publication lag, some restated later.
+
+    A period ends every ``period_days`` trading days. Each asset publishes
+    its value for that period a random number of trading days later (within
+    ``publish_lag``). A random ``restate_share`` of reports gets a second row
+    with the same period end, a later publish date (within ``restate_lag``
+    of the original) and a different value. Rows that would be published
+    after the last calendar day are left out. Values are standard normal.
+    """
+    rng = np.random.default_rng(seed)
+    rows = []
+    n = len(calendar)
+    for end in range(0, n, period_days):
+        for asset in assets:
+            pub = end + int(rng.integers(publish_lag[0], publish_lag[1] + 1))
+            value = float(rng.normal())
+            restate = rng.random() < restate_share
+            re_pub = pub + int(rng.integers(restate_lag[0], restate_lag[1] + 1))
+            re_value = value + float(rng.normal())
+            if pub >= n:
+                continue
+            rows.append((asset, field, calendar[end], calendar[pub], value))
+            if restate and re_pub < n:
+                rows.append((asset, field, calendar[end], calendar[re_pub], re_value))
+    return pd.DataFrame(rows, columns=list(FUNDAMENTAL_COLUMNS))
 
 
 def listed_throughout(calendar: pd.DatetimeIndex, assets: Sequence[str]) -> pd.DataFrame:
