@@ -39,3 +39,17 @@ See the Decisions section of [SPEC.md](SPEC.md): names, the default fill convent
 **Why.** A broken scenario would make a correct engine look buggy. That would damage the core claim of the mutation matrix: each test fails only on its own bug.
 
 **Trade-off.** The dataclass is frozen but its frames are not deep-frozen. Treating a scenario as read-only is a convention, not something the code enforces. Deep copies on every access would make the suite slower for little gain at this size.
+
+## 2026-11-14 — Delisting return timing matches CRSP
+
+**Decision.** `delisting_return` is measured from the close on `delist_date` (the last trading day) to the cash received after delisting, and is compounded onto the position after that close.
+
+**Why.** This matches CRSP's definition of `DLRET`: a value after delisting compared with the price on the last trading date, combined with the regular return. Worthless shares give −100%, which is why validation allows `>= -1`.
+
+**Context for scenarios.** CRSP leaves many performance-related delisting returns missing. The common fix from the literature (Shumway 1997, and Shumway & Warther 1999 for Nasdaq) imputes about −30% for NYSE/AMEX and −55% for Nasdaq. T4 scenarios use a large negative delisting return in this range, so dropping it visibly changes NAV.
+
+## 2026-11-14 — Target weights are unconstrained
+
+**Decision.** `Strategy.target_weights` may return any finite weights, including shorts and gross exposure above 1. The suite does not enforce long-only or a leverage cap.
+
+**Why.** Constraints belong to a strategy, not to the engine contract. The suite's own probe and outcome strategies will stay long-only and fully funded, so their ground truth does not depend on borrow costs or margin, which are out of scope for v1.

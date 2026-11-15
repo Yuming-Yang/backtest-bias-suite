@@ -70,8 +70,9 @@ class Scenario:
             asset. NaN means the asset did not trade that day.
         listings: One row per asset (index = asset) with ``list_date``,
             ``delist_date`` (NaT if still listed) and ``delisting_return``,
-            the return from the last close to the cash received on
-            delisting (CRSP-style; 0 means liquidated at the last close).
+            the return from the close on ``delist_date`` to the cash received
+            after delisting, as in CRSP's DLRET. 0 means liquidated at the
+            last close; -1 means the shares became worthless.
         corporate_actions: Rows of ``asset, ex_date, kind, value``. For a
             split, ``value`` is new shares per old share (2.0 for 2:1). For
             a dividend, it is cash per share, paid on the ex-date.
