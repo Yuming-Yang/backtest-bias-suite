@@ -1,32 +1,16 @@
 """The reference engine on markets small enough to check by hand."""
 
-from dataclasses import dataclass, field
-
 import numpy as np
 import pandas as pd
 import pytest
 
-from btbias import CostModel, ExecutionConvention, Scenario, View
+from btbias import CostModel, ExecutionConvention, Scenario
 from btbias.generator import listed_throughout, random_walk, simple_market, trading_days
 from btbias.reference import ReferenceEngine
 
-from builders import make_scenario
+from builders import Fixed, make_scenario
 
 CAL = trading_days(3)
-
-
-@dataclass
-class Fixed:
-    """Returns a preset target per day and records every view."""
-
-    targets: dict[int, dict[str, float]]
-    name: str = "fixed"
-    seen: list[View] = field(default_factory=list)
-
-    def target_weights(self, view: View) -> pd.Series:
-        self.seen.append(view)
-        day = len(self.seen) - 1
-        return pd.Series(self.targets.get(day, {}), dtype=float)
 
 
 def _market(convention: ExecutionConvention = ExecutionConvention.NEXT_OPEN) -> Scenario:

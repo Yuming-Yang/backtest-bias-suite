@@ -36,7 +36,9 @@ class SameCloseEngine(ReferenceEngine):
 
     def fill_prices(self, scenario: Scenario, t: pd.Timestamp) -> pd.Series:
         decision_day = scenario.calendar.get_loc(t) - 1
-        return scenario.close.iloc[decision_day]
+        # Right fill day, wrong price: an asset that does not trade on the
+        # fill day still cannot fill, so this stays one bug and not two.
+        return scenario.close.iloc[decision_day].where(scenario.open.loc[t].notna())
 
 
 class ZeroCostEngine(ReferenceEngine):
