@@ -3,6 +3,8 @@ name = "btbias"
 version = "0.1.0"
 description = "A test suite that checks daily-bar backtest engines for common biases on synthetic data with known answers."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Yang Yuming" }]
 requires-python = ">=3.12"
 dependencies = [

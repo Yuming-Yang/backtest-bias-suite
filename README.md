@@ -12,3 +12,7 @@ uv run ruff check .
 uv run ruff format --check .
 uv run pytest
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).
