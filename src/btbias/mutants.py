@@ -94,6 +94,15 @@ class ZeroCostEngine(ReferenceEngine):
         return 0.0
 
 
+class IgnoresCorporateActionsEngine(ReferenceEngine):
+    """T6: never applies splits or pays dividends."""
+
+    name = "mutant-T6-ignores-corporate-actions"
+
+    def corporate_actions(self, scenario: Scenario, t: pd.Timestamp, shares: pd.Series) -> float:
+        return 0.0
+
+
 class TodaysConstituentsEngine(ReferenceEngine):
     """T7: uses the index members on the last day for every day."""
 
@@ -111,6 +120,7 @@ MUTANTS: dict[str, type[ReferenceEngine]] = {
     "T3": PeriodEndEngine,
     "T4": SurvivorsOnlyEngine,
     "T5": ZeroCostEngine,
+    "T6": IgnoresCorporateActionsEngine,
     "T7": TodaysConstituentsEngine,
 }
 """Trap id -> the mutant that trap must catch."""
