@@ -45,7 +45,10 @@ class View:
             ``Scenario.fundamentals``. A correct engine shows only rows
             published on or before ``as_of``.
         weights: Current holdings as fractions of NAV at the ``as_of`` close,
-            before any new trade. Missing assets mean zero.
+            before any new trade. Missing assets mean zero. Optional: the
+            suite's strategies never read it, so an engine that only knows
+            its holdings after the whole run (a vectorized one) can leave it
+            empty.
     """
 
     as_of: pd.Timestamp
