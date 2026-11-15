@@ -17,12 +17,15 @@ follows is listed under "Reference semantics" in SPEC.md:
    day's fills: a split multiplies shares by its ratio, a dividend pays
    ``shares * amount`` in cash. On a day with both, the dividend is paid on
    the shares held before the split.
+8. Each day a short pays ``borrow rate * |short market value at the close|``
+   from cash. An order may not take a hard-to-borrow asset below zero
+   shares; the part that would is not filled.
 
 Each rule lives in its own small method so a mutant (see ``btbias.mutants``)
 can break exactly one of them by overriding one method.
 
-Shorting is added together with its trap (T8). Until then the engine
-refuses strategies that need it, rather than silently getting it wrong.
+Anything the engine does not model (whole shares, margin, recalls) is out
+of scope for the suite, see SPEC.md.
 """
 
 from __future__ import annotations
@@ -31,7 +34,7 @@ import numpy as np
 import pandas as pd
 
 from btbias.protocol import TRADE_COLUMNS, BacktestResult, Strategy, View
-from btbias.scenario import ExecutionConvention, Scenario
+from btbias.scenario import BorrowModel, ExecutionConvention, Scenario
 
 MIN_TRADE = 1e-12
 """Trades smaller than this fraction of NAV are skipped as floating-point noise."""
@@ -64,6 +67,7 @@ class ReferenceEngine:
                 cash += self.delisting_proceeds(scenario, asset, shares[asset], last_close[asset])
                 shares[asset] = 0.0
             value = (shares * last_close).fillna(0.0)
+            cash -= self.borrow_fee(scenario, float(-value[value < 0].sum()))
             nav = cash + float(value.sum())
             weights = value / nav
             navs.append(nav)
@@ -129,6 +133,14 @@ class ReferenceEngine:
         """Cash received for ``shares`` of an asset that delists after this close."""
         return shares * last_close * (1 + float(scenario.listings.loc[asset, "delisting_return"]))
 
+    def borrow_model(self, scenario: Scenario) -> BorrowModel:
+        """The borrow terms the engine applies: the scenario's own."""
+        return scenario.borrow
+
+    def borrow_fee(self, scenario: Scenario, short_value: float) -> float:
+        """Today's fee for ``short_value``, the market value of all shorts at the close."""
+        return self.borrow_model(scenario).daily_rate * short_value
+
     def transaction_cost(self, scenario: Scenario, notional: float) -> float:
         return scenario.cost_model.rate * abs(notional)
 
@@ -150,10 +162,14 @@ class ReferenceEngine:
         """
         mark = price.combine_first(last_close)
         nav = cash + float((shares * mark).fillna(0.0).sum())
+        hard_to_borrow = self.borrow_model(scenario).hard_to_borrow
         for asset in shares.index:
             if pd.isna(price[asset]):
                 continue  # no price on the fill day: the order is cancelled
-            delta = target.get(asset, 0.0) * nav / price[asset] - shares[asset]
+            wanted = target.get(asset, 0.0) * nav / price[asset]
+            if asset in hard_to_borrow:
+                wanted = max(wanted, min(shares[asset], 0.0))  # no new or larger short
+            delta = wanted - shares[asset]
             notional = delta * price[asset]
             if abs(notional) <= MIN_TRADE * abs(nav):
                 continue
@@ -173,6 +189,4 @@ def _check_target(target: pd.Series, assets: list[str]) -> pd.Series:
     values = target.astype(float)
     if not np.isfinite(values.to_numpy()).all():
         raise ValueError("target weights must be finite")
-    if (values < 0).any():
-        raise NotImplementedError("short positions are not supported yet (T8)")
     return values
