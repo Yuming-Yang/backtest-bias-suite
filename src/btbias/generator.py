@@ -55,17 +55,22 @@ def random_walk(
     daily_vol: float = 0.02,
     gaps: bool = False,
     overnight_vol: float = 0.01,
+    drift: Mapping[str, float] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Open and close prices from a geometric random walk.
 
     Each day's open-to-close log return is normal with standard deviation
     ``daily_vol``. With ``gaps=True`` the close-to-next-open log return is
     normal with ``overnight_vol``; otherwise it is zero and every open after
-    the first equals the previous close.
+    the first equals the previous close. ``drift`` adds a fixed daily log
+    return to the named assets, to stage trends such as a stock that falls
+    before it delists.
     """
     rng = np.random.default_rng(seed)
     shape = (len(calendar), len(assets))
     intraday = rng.normal(0.0, daily_vol, shape)
+    for asset, mu in (drift or {}).items():
+        intraday[:, list(assets).index(asset)] += mu
     overnight = rng.normal(0.0, overnight_vol, shape) if gaps else np.zeros(shape)
     overnight[0] = 0.0  # the first open is the start price
     close = start_price * np.cumprod(np.exp(overnight + intraday), axis=0)
@@ -112,19 +117,45 @@ def listed_throughout(calendar: pd.DatetimeIndex, assets: Sequence[str]) -> pd.D
     )[list(LISTING_COLUMNS)]
 
 
-def simple_market(
-    name: str, open_: pd.DataFrame, close: pd.DataFrame, **kwargs: object
-) -> Scenario:
-    """A scenario where every asset is listed throughout and nothing else happens.
+def delist(
+    open_: pd.DataFrame,
+    close: pd.DataFrame,
+    listings: pd.DataFrame,
+    asset: str,
+    last_day: pd.Timestamp,
+    delisting_return: float,
+) -> None:
+    """Delist ``asset`` after the close of ``last_day``, in place.
 
-    Extra keyword arguments (``cost_model``, ``convention`` and so on) are
-    passed to ``Scenario``.
+    Prices after ``last_day`` are removed, and the listings row gets the
+    delist date and the return from that close to the cash received.
     """
+    after = close.index > last_day
+    open_.loc[after, asset] = np.nan
+    close.loc[after, asset] = np.nan
+    listings.loc[asset, "delist_date"] = last_day
+    listings.loc[asset, "delisting_return"] = delisting_return
+
+
+def simple_market(
+    name: str,
+    open_: pd.DataFrame,
+    close: pd.DataFrame,
+    listings: pd.DataFrame | None = None,
+    **kwargs: object,
+) -> Scenario:
+    """A scenario with no corporate actions, fundamentals or membership table.
+
+    Without ``listings``, every asset is listed throughout. Extra keyword
+    arguments (``cost_model``, ``convention`` and so on) go to ``Scenario``.
+    """
+    if listings is None:
+        listings = listed_throughout(close.index, list(close.columns))
     return Scenario(
         name=name,
         calendar=close.index,
         open=open_,
         close=close,
-        listings=listed_throughout(close.index, list(close.columns)),
+        listings=listings,
         **kwargs,  # type: ignore[arg-type]
     )

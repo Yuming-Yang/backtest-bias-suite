@@ -148,9 +148,35 @@ def test_order_for_an_asset_without_a_price_on_the_fill_day_is_cancelled() -> No
 
 def test_engine_refuses_features_it_does_not_model_yet() -> None:
     engine = ReferenceEngine()
-    with pytest.raises(NotImplementedError, match="delistings"):
-        engine.run(make_scenario(), Fixed({}))
+    split = pd.DataFrame({"asset": ["AAA"], "ex_date": [CAL[1]], "kind": ["split"], "value": [2.0]})
+    with pytest.raises(NotImplementedError, match="corporate actions"):
+        engine.run(make_scenario(corporate_actions=split), Fixed({}))
     with pytest.raises(NotImplementedError, match="short"):
         engine.run(_market(), Fixed({0: {"A": -0.5}}))
     with pytest.raises(ValueError, match="unknown assets"):
         engine.run(_market(), Fixed({0: {"ZZZ": 0.5}}))
+
+
+class IgnoresDelistingReturn(ReferenceEngine):
+    def delisting_proceeds(
+        self, scenario: Scenario, asset: str, shares: float, last_close: float
+    ) -> float:
+        return shares * last_close
+
+
+def test_delisting_turns_the_position_into_cash_at_the_last_close() -> None:
+    # BBB's last trading day is day 2 (close 18), with a -30% delisting return.
+    scenario = make_scenario()
+    hold_both = {k: {"AAA": 0.4, "BBB": 0.4} for k in range(5)}
+    result = ReferenceEngine().run(scenario, Fixed(hold_both))
+    no_dlret = IgnoresDelistingReturn().run(scenario, Fixed(hold_both))
+    result.check_against(scenario)
+
+    bbb = result.trades[result.trades["asset"] == "BBB"]
+    shares_bbb = bbb["quantity"].sum()
+    day2 = scenario.calendar[2]
+    # Only the delisting return separates the two engines on the last day.
+    np.testing.assert_allclose(result.nav[day2] - no_dlret.nav[day2], -0.3 * shares_bbb * 18.0)
+    # From that close on BBB is cash: zero weight and no further fills.
+    assert (result.weights["BBB"].iloc[2:] == 0.0).all()
+    assert (pd.to_datetime(bbb["date"]) <= day2).all()

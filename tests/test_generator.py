@@ -4,7 +4,9 @@ import pytest
 
 from btbias.generator import (
     MAX_GROSS,
+    delist,
     flat_prices,
+    listed_throughout,
     random_walk,
     random_weights,
     simple_market,
@@ -68,3 +70,22 @@ def test_generated_pieces_make_a_valid_scenario() -> None:
     s = simple_market("walk", open_, close)
     assert s.assets == tuple(ASSETS)
     assert s.listings["delist_date"].isna().all()
+
+
+def test_drift_moves_only_the_named_asset() -> None:
+    base = random_walk(CAL, ASSETS, seed=4)[1]
+    tilted = random_walk(CAL, ASSETS, seed=4, drift={"BBB": -0.01})[1]
+    assert tilted["AAA"].equals(base["AAA"]) and tilted["CCC"].equals(base["CCC"])
+    np.testing.assert_allclose(
+        np.log(tilted["BBB"] / base["BBB"]), -0.01 * np.arange(1, len(CAL) + 1), atol=1e-12
+    )
+
+
+def test_delist_removes_later_prices_and_records_the_return() -> None:
+    open_, close = random_walk(CAL, ASSETS, seed=5)
+    listings = listed_throughout(CAL, ASSETS)
+    delist(open_, close, listings, "CCC", CAL[9], -0.3)
+    s = simple_market("delisting", open_, close, listings=listings)
+    assert close["CCC"].iloc[10:].isna().all() and close["CCC"].iloc[:10].notna().all()
+    assert s.listings.loc["CCC", "delist_date"] == CAL[9]
+    assert s.listings.loc["CCC", "delisting_return"] == -0.3
