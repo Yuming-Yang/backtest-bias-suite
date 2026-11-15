@@ -68,3 +68,27 @@ See the Decisions section of [SPEC.md](SPEC.md): names, the default fill convent
 
 **Dropped.** `pandas>=2.2.0`: importing 2.2.0 emits a pyarrow DeprecationWarning, and this project runs pytest with warnings as errors. Relaxing that filter for one patch release was not worth it.
 
+## 2026-11-14 — Reference semantics: size at the fill, costs from cash
+
+**Decision.** Orders are sized with fill-day prices, costs are deducted from cash, shares are fractional, and unfillable orders are cancelled. Full rules are in SPEC.md under "Reference semantics".
+
+**Why.** Sizing at the fill never overspends and matches the `weights * returns` arithmetic of vectorized research code, so ground truth can be computed by hand.
+
+**Dropped.** Sizing at the decision close. Many event-driven engines do this, and it is not a bug, but it needs a rule for what happens when the fill costs more than the cash available. Scenarios outside T2 set the next open equal to the close, so engines of either kind get the same answer.
+
+## 2026-11-14 — One feature per scenario
+
+**Decision.** Each trap's scenario switches on exactly one feature (moving opens, costs, corporate actions, delistings, membership changes, fundamentals, shorts). The table is in SPEC.md.
+
+**Why.** Otherwise a fill-timing mutant fails every test that trades, and the mutation matrix cannot show that each test is specific.
+
+**Trade-off.** Bugs that need two features at once, such as a split on the day after a delisting, are not covered.
+
+## 2026-11-14 — T8: shorting is in scope, for one trap only
+
+**Decision.** Add T8, free and unlimited shorting. Scenarios gain a daily borrow rate and a per-asset shortable flag. This revises the earlier "target weights are unconstrained" entry: suite strategies stay long-only everywhere except T8.
+
+**Why.** A long-short backtest can look good because of its short leg while those shorts could not have been borrowed, or not at zero cost. An engine that lets this through inflates exactly the strategies that are hardest to trade.
+
+**Dropped.** Time-varying borrow availability, recalls and margin. They are real, but each needs its own ground truth, and a static flag is enough to catch an engine that ignores borrowing altogether.
+
