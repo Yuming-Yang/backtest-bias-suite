@@ -113,6 +113,8 @@ class BacktestResult:
         unknown = set(self.weights.columns) - set(scenario.assets)
         if unknown:
             raise ResultError(f"weights refer to unknown assets {sorted(unknown)}")
+        if not np.isfinite(self.weights.to_numpy(dtype=float)).all():
+            raise ResultError("weights must be finite on every day")
 
         tr = self.trades
         missing = [c for c in TRADE_COLUMNS if c not in tr.columns]
@@ -125,6 +127,11 @@ class BacktestResult:
         unknown = set(tr["asset"]) - set(scenario.assets)
         if unknown:
             raise ResultError(f"trades refer to unknown assets {sorted(unknown)}")
+        if not np.isfinite(tr[["quantity", "price", "cost"]].to_numpy(dtype=float)).all():
+            raise ResultError("trade quantity, price and cost must be finite")
+        for day, asset in zip(pd.to_datetime(tr["date"]), tr["asset"], strict=True):
+            if pd.isna(scenario.close.loc[day, asset]):
+                raise ResultError(f"trade in {asset} on {day.date()}, a day it does not trade")
         if (tr["price"].astype(float) <= 0).any():
             raise ResultError("fill prices must be > 0")
         if (tr["cost"].astype(float) < 0).any():

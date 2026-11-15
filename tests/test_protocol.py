@@ -94,6 +94,16 @@ BAD_RESULTS = {
     "trade unknown asset": (lambda r: {"trades": _trade(asset="ZZZ")}, "unknown assets"),
     "non-positive fill price": (lambda r: {"trades": _trade(price=0.0)}, "fill prices"),
     "negative cost": (lambda r: {"trades": _trade(cost=-1.0)}, "costs"),
+    "weights not finite": (
+        lambda r: {"weights": r.weights * float("nan")},
+        "weights must be finite",
+    ),
+    "fill price not finite": (lambda r: {"trades": _trade(price=float("nan"))}, "must be finite"),
+    "quantity not finite": (lambda r: {"trades": _trade(quantity=float("inf"))}, "must be finite"),
+    "trade after delisting": (
+        lambda r: {"trades": _trade(asset="BBB", date=pd.Timestamp("2024-01-05"))},
+        "does not trade",
+    ),
 }
 
 
