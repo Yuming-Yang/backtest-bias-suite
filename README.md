@@ -6,7 +6,7 @@ See [SPEC.md](SPEC.md) for the problem definition, scope and acceptance criteria
 
 ## Current state
 
-T5 (zero transaction costs) runs end to end; the other traps are being added one milestone at a time.
+T1 (price lookahead), T2 (signal/execution misalignment) and T5 (zero transaction costs) run end to end; the other traps are being added one milestone at a time.
 
 ```python
 from btbias import ReferenceEngine, run_suite

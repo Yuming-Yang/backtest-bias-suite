@@ -14,7 +14,7 @@ from btbias import (
     run_suite,
 )
 from btbias.trap import run_trap
-from btbias.traps import T5
+from btbias.traps import ALL_TRAPS, T5
 
 
 class Wrapped:
@@ -82,4 +82,4 @@ def test_run_suite_reports_every_trap() -> None:
     report = run_suite(ReferenceEngine())
     assert report.adapter == "reference"
     assert report.passed and report.failed_ids == ()
-    assert [r.trap_id for r in report.results] == ["T5"]
+    assert [r.trap_id for r in report.results] == [t.id for t in ALL_TRAPS]

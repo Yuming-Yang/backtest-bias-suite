@@ -77,7 +77,7 @@ Ranked by how common they are and how cleanly they can be tested deterministical
 
 1. **Scaffold and data model.** uv project, CI, `Scenario` / `View` / `BacktestResult` types, adapter protocol. Done.
 2. **Generator, reference engine and one trap end to end.** Seeded generator; minimal event-loop reference engine; T5 with its mutant; a first draft of the vectorized example adapter. T5 is the simplest trap, and the example adapter is the riskiest acceptance criterion, so both come early to test the contract before the other traps are built on it. Done.
-3. **Timing traps.** T1 and T2, with probes, outcome checks and mutants.
+3. **Timing traps.** T1 and T2, with probes, outcome checks and mutants. Done.
 4. **Point-in-time data traps.** T3, T4 and T7.
 5. **Accounting traps.** T6 and T8.
 6. **Mutation matrix, CLI, final example adapter, README.**
