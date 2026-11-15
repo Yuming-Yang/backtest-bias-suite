@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from btbias.scenario import CostModel, ExecutionConvention, ScenarioError
+from btbias.scenario import BorrowModel, CostModel, ExecutionConvention, ScenarioError
 
 from builders import CALENDAR, make_scenario
 
@@ -232,3 +232,23 @@ def test_invalid_scenarios_are_rejected(case: str) -> None:
     overrides, message = BAD_CASES[case]
     with pytest.raises(ScenarioError, match=message):
         make_scenario(**overrides())
+
+
+def test_borrow_model_defaults_to_free_and_unlimited() -> None:
+    s = make_scenario()
+    assert s.borrow.daily_rate == 0.0 and s.borrow.hard_to_borrow == frozenset()
+    s = make_scenario(borrow=BorrowModel(daily_rate=0.0002, hard_to_borrow=frozenset({"BBB"})))
+    assert s.borrow.hard_to_borrow == {"BBB"}
+
+
+@pytest.mark.parametrize("rate", [-0.0001, float("nan"), float("inf")])
+def test_borrow_model_rejects_bad_rates(rate: float) -> None:
+    with pytest.raises(ScenarioError, match="borrow rate"):
+        BorrowModel(daily_rate=rate)
+
+
+def test_borrow_model_rejects_unknown_or_unhashable_assets() -> None:
+    with pytest.raises(ScenarioError, match="frozenset"):
+        BorrowModel(hard_to_borrow={"AAA"})  # type: ignore[arg-type]
+    with pytest.raises(ScenarioError, match="unknown assets"):
+        make_scenario(borrow=BorrowModel(hard_to_borrow=frozenset({"ZZZ"})))

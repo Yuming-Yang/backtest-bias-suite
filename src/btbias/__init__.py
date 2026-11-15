@@ -6,7 +6,7 @@ checks that it does not fall for common backtest biases. See SPEC.md.
 
 from btbias.protocol import Adapter, BacktestResult, ResultError, Strategy, View
 from btbias.reference import ReferenceEngine
-from btbias.scenario import CostModel, ExecutionConvention, Scenario, ScenarioError
+from btbias.scenario import BorrowModel, CostModel, ExecutionConvention, Scenario, ScenarioError
 from btbias.suite import SuiteReport, run_suite
 from btbias.trap import Status, Trap, TrapResult
 
@@ -15,6 +15,7 @@ __version__ = "0.1.0"
 __all__ = [
     "Adapter",
     "BacktestResult",
+    "BorrowModel",
     "CostModel",
     "ExecutionConvention",
     "ReferenceEngine",
