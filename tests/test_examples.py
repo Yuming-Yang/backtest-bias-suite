@@ -9,7 +9,6 @@ import pytest
 from btbias import Adapter, CostModel, ExecutionConvention, ReferenceEngine, run_suite
 from btbias.generator import random_walk, random_weights, simple_market, trading_days
 from btbias.strategies import ScheduledWeights
-from btbias.traps import T1, T2, T5
 
 import vectorized_adapter
 from vectorized_adapter import VectorizedAdapter
@@ -20,16 +19,16 @@ MAX_ADAPTER_LINES = 30
 def test_adapter_fits_in_30_lines() -> None:
     lines = inspect.getsource(vectorized_adapter).splitlines()
     code = [ln for ln in lines if ln.strip() and not ln.strip().startswith("#")]
+    # Counted as the formatter lays it out; no squeezing lines past it.
+    assert "fmt: skip" not in "\n".join(lines)
     assert len(code) <= MAX_ADAPTER_LINES, f"adapter is {len(code)} lines"
 
 
-def test_adapter_satisfies_the_protocol_and_passes_the_traps_it_models() -> None:
+def test_adapter_satisfies_the_protocol_and_passes_every_trap() -> None:
     adapter = VectorizedAdapter()
     assert isinstance(adapter, Adapter)
-    # The example engine has no fundamentals, membership or delistings, so
-    # it runs the traps whose scenarios need none of them.
-    report = run_suite(adapter, traps=[T1, T2, T5])
-    assert report.passed, [r.detail for r in report.results]
+    report = run_suite(adapter)
+    assert report.passed, [f"{r.trap_id}: {r.detail}" for r in report.results if not r.passed]
 
 
 def test_adapter_matches_the_reference_engine_on_a_moving_market() -> None:

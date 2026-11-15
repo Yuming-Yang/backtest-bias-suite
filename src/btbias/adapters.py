@@ -1,4 +1,8 @@
-"""A ready-made point-in-time view, for adapters whose engine has no data feed.
+"""Helpers for adapters around engines that work on weight and money tables.
+
+``view_at`` builds a point-in-time view. ``fills_from_money`` turns a table
+of money traded per asset and day into the one-row-per-fill trades table
+the suite expects.
 
 An engine that reads its own data (an event loop with a data handler) should
 build views from that data, so the probe checks test the engine. A
@@ -14,9 +18,10 @@ still test the engine.
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
-from btbias.protocol import View
+from btbias.protocol import TRADE_COLUMNS, View
 from btbias.scenario import Scenario
 
 
@@ -43,4 +48,25 @@ def view_at(scenario: Scenario, t: pd.Timestamp) -> View:
         close=scenario.close.loc[:t],
         universe=universe,
         fundamentals=fu,
+    )
+
+
+def fills_from_money(traded: pd.DataFrame, prices: pd.DataFrame, cost_rate: float) -> pd.DataFrame:
+    """One trade row per non-zero cell of ``traded`` (money bought, sells < 0).
+
+    Each fill is priced from ``prices`` on the same day (the open, for an
+    engine that fills at the next open) and pays ``cost_rate`` on its size.
+    """
+    day, asset = np.nonzero(traded.to_numpy())
+    money = traded.to_numpy(dtype=float)[day, asset]
+    price = prices.reindex_like(traded).to_numpy(dtype=float)[day, asset]
+    return pd.DataFrame(
+        {
+            "date": traded.index[day],
+            "asset": traded.columns[asset],
+            "quantity": money / price,
+            "price": price,
+            "cost": cost_rate * np.abs(money),
+        },
+        columns=list(TRADE_COLUMNS),
     )
