@@ -44,6 +44,7 @@ Ranked by how common they are and how cleanly they can be tested deterministical
 1. **Stale prices and untradable fills.** Missing prices are forward-filled and treated as tradable, or fills happen while an asset is halted or has zero volume. Merged into one trap because the test scenario is the same.
 2. **Back-adjusted price levels leaking future splits.** A filter like "price > $5" on back-adjusted prices uses information from future splits.
 3. **Calendar misalignment.** Joining two data sources with different trading calendars or timezones, so one is shifted by a day. Real, but closer to data engineering, and harder to stage naturally.
+4. **A combined scenario.** One market with every feature switched on at once (moving opens, costs, a split, a delisting, a membership change, a short). It only has to match ground truth; it is not part of the mutation matrix, because every mutant is expected to fail it. This covers bugs that need two features to interact, which the one-feature-per-scenario rule in v1 cannot reach.
 
 ## Package shape
 
@@ -140,7 +141,7 @@ Two more rules follow from the table:
 ## Known limits (for the README Limitations section)
 
 - **Probes test what the adapter hands over.** For an engine with its own data feed, that exercises the engine. For a vectorized engine, the adapter author writes the daily slicing, so a probe tests the adapter. Outcome checks do not have this gap.
-- **Scenarios are clean on purpose.** One feature at a time makes failures attributable, and unlike a real market. Bugs that only appear when two features interact are out of reach.
+- **Scenarios are clean on purpose.** One feature at a time makes failures attributable, and unlike a real market. Bugs that only appear when two features interact are out of reach in v1; a combined scenario is listed as a v2 candidate.
 - **Whole-share engines** will miss the 1e-9 tolerance.
 - **T8 covers feasibility, not attribution.** It checks that shorts cost money and that unborrowable assets are not shorted. Whether a long-short strategy earns most of its return on the short leg is a property of the strategy, and the suite does not report it.
 
