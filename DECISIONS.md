@@ -215,3 +215,23 @@ See the Decisions section of [SPEC.md](SPEC.md): names, the default fill convent
 **Why.** It mirrors how T5 treats the cost model, so "ignores the declared borrow terms" is one bug in one place. Splitting T8 into a fee mutant and an availability mutant would break the one-mutant-per-trap rule; instead, two test engines show that each half is caught on its own (no fee on NAV; shorting a hard-to-borrow name by name).
 
 **Dropped.** Per-asset borrow rates, time-varying availability and recalls. They are real, and listed under Known limits in SPEC.md, but a flat rate and a static list are enough to catch an engine that ignores borrowing.
+
+## 2026-11-15 — The example engine covers every trap
+
+**Decision.** The example vectorized engine models missing prices, delisting returns, splits and dividends, borrow fees and a no-short list, and passes all eight traps. This replaces the earlier decision to run it on T1, T2 and T5 only.
+
+**Why.** Until then only the reference engine had passed every trap, and the traps were written alongside it. An engine written separately, in another style (money per asset, a weight matrix up front), passing all eight is the best available evidence that the traps test the reference semantics and not one implementation's habits.
+
+## 2026-11-15 — Adapter helpers live in the library
+
+**Decision.** `btbias.adapters` provides `view_at` (a point-in-time view) and `fills_from_money` (a money-traded table to one row per fill). The example adapter uses both and is 28 code lines.
+
+**Why.** Formatted normally, the full adapter was 39 lines. Both pieces are needed by every adapter around a weight-matrix engine, and writing the point-in-time rules again in each adapter would invite exactly the bugs the suite looks for. The line-count test also rejects `fmt: skip`, so the 30-line limit is not met by squeezing lines past the formatter.
+
+**Trade-off.** For an adapter that uses `view_at`, the probes of T1, T3 and T7 test `view_at` rather than the engine. This is listed under Limitations in the README.
+
+## 2026-11-15 — The pytest pattern is six lines, not three
+
+**Decision.** `btbias.testing` exports `ALL_TRAPS` and `assert_passes`; a user parametrizes one test over the traps.
+
+**Why.** The spec guessed three lines. Getting one named test per trap needs the import, a parametrize decorator with ids and a test function, which is six lines. A pytest plugin could hide them, but would make pytest a dependency for a gain of three lines.

@@ -66,12 +66,12 @@ Ranked by how common they are and how cleanly they can be tested deterministical
 ## Acceptance criteria
 
 - [x] The reference engine passes all v1 trap tests.
-- [ ] For each of T1–T8, the matching mutant fails that trap's test and passes all the others; the full mutation matrix is printed in the README.
+- [x] For each of T1–T8, the matching mutant fails that trap's test and passes all the others; the full mutation matrix is printed in the README.
 - [x] Ground truth for every outcome check is computed by code independent of the reference engine (not by calling the engine itself).
-- [ ] An example adapter for a second engine style, written as a vectorized pandas engine, is 30 lines or fewer and runs in CI.
+- [x] An example adapter for a second engine style, written as a vectorized pandas engine, is 30 lines or fewer and runs in CI.
 - [ ] `uv run pytest` passes in CI (GitHub Actions) with ruff clean.
 - [ ] A fresh clone can follow the README to run the suite against the reference engine in under a minute.
-- [ ] README: one-sentence problem, quick-start demo, mutation-matrix results, design trade-offs, Limitations.
+- [x] README: one-sentence problem, quick-start demo, mutation-matrix results, design trade-offs, Limitations.
 
 ## Milestones
 
@@ -80,7 +80,7 @@ Ranked by how common they are and how cleanly they can be tested deterministical
 3. **Timing traps.** T1 and T2, with probes, outcome checks and mutants. Done.
 4. **Point-in-time data traps.** T3, T4 and T7. Done.
 5. **Accounting traps.** T6 and T8. Done.
-6. **Mutation matrix, CLI, final example adapter, README.**
+6. **Mutation matrix, CLI, final example adapter, README.** Done.
 
 Each milestone is one branch and one PR.
 
