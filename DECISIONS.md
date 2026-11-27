@@ -122,7 +122,7 @@ See the Decisions section of [SPEC.md](SPEC.md): names, the default fill convent
 
 **Decision.** Outcome checks keep a relative tolerance of 1e-9. The example vectorized engine keeps one loop over days so that each fill trades the gap between the target and the holdings as they drifted since the last fill.
 
-**Why.** Drafting the example adapter showed that the textbook vectorized cost, `rate * |w_t - w_{t-1}| * NAV`, ignores that drift. On the T5 scenario it ends about 6e-6 (relative) away from the exact NAV, against a cost effect of about 2%. It fails T5 at 1e-9 even though it charges costs. With 1e-9 the suite can tell "follows the reference semantics" from "almost does", and the example shows an exact vectorized engine is possible in about 60 lines.
+**Why.** Drafting the example adapter showed that the textbook vectorized cost, `rate * |w_t - w_{t-1}| * NAV`, ignores that drift. On the T5 scenario it ends about 6e-6 (relative) away from the exact NAV, against a cost effect of about 2%. It fails T5 at 1e-9 even though it charges costs. With 1e-9 the suite can tell "follows the reference semantics" from "almost does", and the example shows an exact vectorized engine is possible in about 80 lines.
 
 **Trade-off.** Engines that use the textbook formula will fail T5 without a cost bug. The alternative is a per-trap tolerance set well below the size of the effect each trap tests (on T5, 1e-4 would still sit two orders of magnitude below the 2% effect). That would accept approximate engines at the price of missing bugs smaller than the tolerance.
 
