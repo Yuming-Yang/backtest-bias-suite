@@ -79,7 +79,7 @@ Reproduce with `uv run btbias matrix`.
 
 **How much each bug moves a backtest**, as final NAV on the trap's own scenario:
 
-| | Bias | Correct engine | With the bug | Bug moves NAV by |
+| | Bias | Correct engine | With the bug | Bug NAV ÷ correct NAV − 1 |
 | --- | --- | --- | --- | --- |
 | T1 | Price lookahead | −12.6% | +211.5% | +256.6% |
 | T2 | Signal/execution misalignment | +4.7% | +0.8% | −3.7% |
@@ -89,6 +89,8 @@ Reproduce with `uv run btbias matrix`.
 | T6 | Corporate actions unadjusted | +0.0% | −39.4% | −39.4% |
 | T7 | Universe membership lookahead | +0.3% | +41.9% | +41.4% |
 | T8 | Free and unlimited shorting | −0.5% | +0.0% | +0.5% |
+
+The last column is a ratio of final NAVs, not a difference of returns: for T1, (1 + 2.115) ÷ (1 − 0.126) − 1 = +256.6%. `btbias matrix` prints it as "bug moves NAV by".
 
 These are sizes on small synthetic markets (30–120 days), not estimates for real data. T3's +1.0% is noise: the synthetic fundamentals do not predict returns, so the leak changes which stock is held without making it a better one. It is caught on the first day either way.
 
@@ -114,6 +116,7 @@ The reference semantics (fills sized at the fill price, costs from cash, fractio
 - **One feature per scenario.** Bugs that need two features at once (a split on a short position, a delisting during a membership change) are not covered.
 - **Strict reference semantics.** Engines that size orders at the decision close or round to whole shares are not wrong, but will miss the 1e-9 tolerance where those choices change the answer.
 - **Simple borrow and delisting models.** One borrow rate, a fixed hard-to-borrow list, no recalls or margin; delisting proceeds are paid at the last close.
+- **One seeded scenario per trap.** The bug sizes above come from a single draw of each trap's market and would be different on another; they show direction and rough scale, not a distribution.
 - **Synthetic markets only.** The suite says whether an engine handles each case correctly, not how large a bias would be on real data.
 
 ## Related work
