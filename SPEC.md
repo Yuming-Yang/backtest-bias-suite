@@ -21,7 +21,7 @@ This project is a test suite that wraps around any daily-bar backtest engine and
    - *Probe checks* (deterministic): suite-provided strategies inspect the `view` they receive and record what they saw, for example the latest price timestamp or which fundamental vintages were visible. A leak is caught at the exact bar where it happens.
    - *Outcome checks* (deterministic): the engine's NAV, trades and fill prices are compared against an independently computed ground truth, within a stated numerical tolerance.
 
-   Statistical checks (for example, "a random-walk market should not yield Sharpe 5") are kept as a secondary diagnostic only, because they are slower and can flake.
+   Statistical checks (for example, "a random-walk market should not yield Sharpe 5") are left out, because they are slower and can flake as pass/fail tests.
 4. **Reference engine and mutants.** A deliberately small, readable reference engine passes every test. Each trap has a mutant: the reference engine with exactly one bug switched on. A meta-test checks the mutation matrix: every mutant fails its own trap and only its own trap. This shows that the tests are sharp (they catch the bug) and specific (they do not fire on unrelated bugs).
 
 ## Trap list (v1)
@@ -33,7 +33,7 @@ This project is a test suite that wraps around any daily-bar backtest engine and
 | T3 | Fundamentals not point-in-time | Fundamentals visible from period end instead of publish date; restated values leak backward | Probe: every visible value has publish date ≤ t, and the as-originally-reported value is shown until the restatement date |
 | T4 | Survivorship bias | Assets that delist are missing from the whole history, or their delisting return is dropped | Outcome: equal-weight "hold all listed assets" NAV matches the ground truth including delisted names and delisting returns |
 | T5 | Zero transaction costs | Declared cost model is ignored | Outcome: on flat prices, a pure-turnover strategy loses exactly turnover × cost rate |
-| T6 | Corporate actions unadjusted | A 2:1 split shows up as a −50% return; dividends are not credited | Outcome: holding through a split leaves NAV unchanged; holding through a dividend increases NAV by the dividend amount |
+| T6 | Corporate actions unadjusted | A 2:1 split shows up as a −50% return; dividends are not credited | Outcome: on companies whose total value never changes, holding through splits and dividends leaves NAV unchanged (the dividend is paid in cash as the price drops by the same amount) |
 | T7 | Universe membership lookahead | Today's index constituents are used for the whole history | Probe: every asset offered at t was a member at t. Outcome: equal-weight "hold the index members" NAV matches the ground truth built from point-in-time membership |
 | T8 | Free and unlimited shorting | Short positions pay no borrow fee, and assets that cannot be borrowed are shorted anyway | Outcome: a short held on flat prices loses exactly the borrow fee; an order that would open a short in a non-shortable asset is not filled |
 
@@ -51,7 +51,7 @@ Ranked by how common they are and how cleanly they can be tested deterministical
 - Python 3.12, managed by uv; numpy and pandas only at runtime.
 - Import name: `btbias`.
 - Library API: `btbias.run_suite(adapter) -> SuiteReport`.
-- pytest integration: a user writes a 3-line test file that parametrizes the suite over their adapter, and gets one test per trap.
+- pytest integration: a user writes a six-line test file that parametrizes the suite over their adapter, and gets one test per trap.
 - CLI: `btbias run path.to:MyAdapter` prints a pass/fail table.
 - Execution convention is declared per scenario (default: decide at close t, fill at open t+1), so engines that use a different convention can still be tested honestly.
 
@@ -142,7 +142,7 @@ Two more rules follow from the table:
 
 ## Known limits (for the README Limitations section)
 
-- **Probes test what the adapter hands over.** For an engine with its own data feed, that exercises the engine. For a vectorized engine, the adapter author writes the daily slicing, so a probe tests the adapter. Outcome checks do not have this gap.
+- **Probes test what the adapter hands over.** For an engine with its own data feed, that exercises the engine. For a vectorized engine that builds its daily views with `btbias.adapters.view_at`, the probes of T1, T3 and T7 test `view_at`. Outcome checks do not have this gap.
 - **Scenarios are clean on purpose.** One feature at a time makes failures attributable, and unlike a real market. Bugs that only appear when two features interact are out of reach in v1; a combined scenario is listed as a v2 candidate.
 - **Whole-share engines** will miss the 1e-9 tolerance.
 - **T8 covers feasibility, not attribution.** It checks that shorts cost money and that unborrowable assets are not shorted. Whether a long-short strategy earns most of its return on the short leg is a property of the strategy, and the suite does not report it.
